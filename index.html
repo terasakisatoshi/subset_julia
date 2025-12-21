@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SubsetVM Playground</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <header>
+        <h1>SubsetVM Playground</h1>
+        <p>Julia Subset VM - WebAssembly Edition</p>
+    </header>
+
+    <main>
+        <div class="editor-container">
+            <div class="toolbar">
+                <select id="sample-select">
+                    <option value="">-- Select a sample --</option>
+                </select>
+                <button id="run-btn" class="primary">Run (Ctrl+Enter)</button>
+                <button id="clear-btn">Clear</button>
+            </div>
+            <div class="editor-wrapper">
+                <div id="monaco-container"></div>
+            </div>
+        </div>
+
+        <div class="output-container">
+            <h2>Output</h2>
+            <pre id="output"></pre>
+            <div id="result"></div>
+            <div id="error" class="error hidden"></div>
+        </div>
+    </main>
+
+    <footer>
+        <p>
+            <a href="https://github.com/atelierarith/ailujsoi" target="_blank">GitHub</a>
+            |
+            <span id="version"></span>
+        </p>
+    </footer>
+
+    <script src="https://cdn.jsdelivr.net/npm/monaco-editor@0.45.0/min/vs/loader.js"></script>
+    <script type="module" src="app.js?v=33"></script>
+</body>
+</html>
