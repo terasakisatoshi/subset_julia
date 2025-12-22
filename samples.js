@@ -1,5 +1,5 @@
 // Sample Julia programs for the playground
-// Synced from iOS app (SubsetVMApp) - Beginner, Intermediate, and Advanced samples
+// Synced from iOS app (SubsetJuliaVMApp) - Beginner, Intermediate, and Advanced samples
 
 export const samples = [
     // ==================== BEGINNER ====================
@@ -8,7 +8,7 @@ export const samples = [
         category: "Basic",
         code: `#=
 ==========================================
-Welcome to SubsetVM!
+Welcome to SubsetJuliaVM!
 ==========================================
 
 HOW TO USE THIS APP:
@@ -23,7 +23,7 @@ TIP: The divider handle (gray bar) can be
 dragged up/down to adjust the split ratio.
 
 ==========================================
-SubsetVM へようこそ！
+SubsetJuliaVM へようこそ！
 ==========================================
 
 アプリの使い方:

@@ -1,7 +1,7 @@
 {
   "name": "subset-vm-web",
   "version": "0.1.0",
-  "description": "SubsetVM Web Playground",
+  "description": "SubsetJuliaVM Web Playground",
   "private": true,
   "scripts": {
     "serve": "python3 -m http.server 8080",

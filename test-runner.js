@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * CLI Test Runner for SubsetVM Web
+ * CLI Test Runner for SubsetJuliaVM Web
  *
  * Usage:
  *   node test-runner.js [--server-url=http://localhost:8080]
@@ -19,7 +19,7 @@ const SERVER_URL = process.argv.find(a => a.startsWith('--server-url='))?.split(
     || 'http://localhost:8080';
 
 async function runTests() {
-    console.log('SubsetVM Web Test Runner');
+    console.log('SubsetJuliaVM Web Test Runner');
     console.log('========================\n');
     console.log(`Server URL: ${SERVER_URL}\n`);
 

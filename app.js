@@ -1,4 +1,4 @@
-// SubsetVM Playground - Main Application (Monaco Editor version)
+// SubsetJuliaVM Playground - Main Application (Monaco Editor version)
 import { samplesIR } from './samples_ir.js?v=23';
 import { registerJuliaLanguage, setWasmModule } from './julia-language.js?v=3';
 
@@ -50,7 +50,7 @@ async function init() {
 
     // Display version
     if (wasm) {
-        versionSpan.textContent = `SubsetVM v${wasm.get_version()}`;
+        versionSpan.textContent = `SubsetJuliaVM v${wasm.get_version()}`;
     }
 
     // Load first sample
@@ -232,14 +232,14 @@ async function copyOutput() {
 async function loadWasm() {
     try {
         // Try to load the WASM module
-        const module = await import('./pkg/subset_vm_web.js');
+        const module = await import('./pkg/subset_julia_vm_web.js');
         await module.default();
         wasm = module;
         console.log('WASM module loaded successfully');
     } catch (e) {
         console.warn('WASM module not available:', e);
         output.textContent = 'WASM module not loaded. Please run:\n\n' +
-            '  cd subset_vm_web\n' +
+            '  cd subset_julia_vm_web\n' +
             '  wasm-pack build --target web --out-dir ../web/pkg\n\n' +
             'Then refresh this page.';
     }
@@ -282,7 +282,7 @@ async function run() {
             displayResult(execResult);
         } else if (parser) {
             // Parse and compile custom code
-            console.log('Using JavaScript lowering for custom code');
+            console.log('Using WASM-side lowering for custom code');
             await runCustomCode(code, seed);
         } else {
             showError('Parser not loaded. Custom code execution requires the Julia parser.');

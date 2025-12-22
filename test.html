@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>SubsetVM Web Test Runner</title>
+    <title>SubsetJuliaVM Web Test Runner</title>
     <style>
         * {
             box-sizing: border-box;
@@ -139,7 +139,7 @@
     </style>
 </head>
 <body>
-    <h1>SubsetVM Web Test Runner</h1>
+    <h1>SubsetJuliaVM Web Test Runner</h1>
 
     <div class="controls">
         <button id="run-all" class="primary">Run All Tests</button>
@@ -170,7 +170,7 @@
 
             try {
                 // Load WASM
-                const module = await import('./pkg/subset_vm_web.js');
+                const module = await import('./pkg/subset_julia_vm_web.js');
                 await module.default();
                 wasm = module;
                 console.log('WASM loaded');

@@ -1,6 +1,6 @@
 // IR JSON for web playground samples
-// Samples with ir: null use JavaScript lowering
-// Synced from iOS app (SubsetVMApp) - Beginner, Intermediate, and Advanced samples
+// Samples with ir: null use CST JSON + WASM-side lowering
+// Synced from iOS app (SubsetJuliaVMApp) - Beginner, Intermediate, and Advanced samples
 
 export const samplesIR = [
   // ==================== BEGINNER ====================
@@ -8,7 +8,7 @@ export const samplesIR = [
     name: "Hello World",
     code: `#=
 ==========================================
-Welcome to SubsetVM Playground!
+Welcome to SubsetJuliaVM Playground!
 ==========================================
 
 HOW TO USE:
@@ -22,7 +22,7 @@ SHORTCUTS:
 - Ctrl+Enter (or Cmd+Enter): Run code
 
 ==========================================
-SubsetVM Playground へようこそ！
+SubsetJuliaVM Playground へようこそ！
 ==========================================
 
 使い方:
