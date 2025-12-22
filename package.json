@@ -1,0 +1,14 @@
+{
+  "name": "subset-vm-web",
+  "version": "0.1.0",
+  "description": "SubsetVM Web Playground",
+  "private": true,
+  "scripts": {
+    "serve": "python3 -m http.server 8080",
+    "test": "node test-runner.js",
+    "test:headed": "PLAYWRIGHT_HEADLESS=false node test-runner.js"
+  },
+  "devDependencies": {
+    "playwright": "^1.40.0"
+  }
+}

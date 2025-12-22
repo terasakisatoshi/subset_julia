@@ -19,6 +19,20 @@ export function get_version(): string;
 export function init(): void;
 
 /**
+ * Run a Julia program by passing the CST (parsed by web-tree-sitter) and source code.
+ * The CST is serialized as JSON from JavaScript, lowered to IR in Rust, then executed.
+ *
+ * # Arguments
+ * * `cst_json` - JSON string representing the parsed CST from web-tree-sitter
+ * * `source` - Original Julia source code (needed for text extraction)
+ * * `seed` - Random seed for deterministic execution
+ *
+ * # Returns
+ * An ExecutionResult object containing success status, value, output, and error message
+ */
+export function run_from_cst_json(cst_json: string, source: string, seed: bigint): any;
+
+/**
  * Run a Core IR JSON program and return the result.
  *
  * This function takes a JSON-serialized Core IR program and executes it.
@@ -39,6 +53,29 @@ export function run_ir_json(ir_json: string, seed: bigint): any;
  */
 export function run_ir_simple(ir_json: string, seed: bigint): number;
 
+/**
+ * Get completions for a LaTeX prefix.
+ * Returns a JSON array of [latex, unicode] pairs.
+ */
+export function unicode_completions(prefix: string): any;
+
+/**
+ * Expand all LaTeX sequences in a string to their Unicode equivalents.
+ */
+export function unicode_expand(input: string): string;
+
+/**
+ * Look up a LaTeX command and return its Unicode representation.
+ * Returns null if not found.
+ */
+export function unicode_lookup(latex: string): string | undefined;
+
+/**
+ * Reverse lookup: get LaTeX for a Unicode character.
+ * Returns null if not found.
+ */
+export function unicode_reverse_lookup(unicode_char: string): string | undefined;
+
 export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembly.Module;
 
 export interface InitOutput {
@@ -47,8 +84,13 @@ export interface InitOutput {
   readonly get_unsupported_features: () => any;
   readonly get_version: () => [number, number];
   readonly init: () => void;
+  readonly run_from_cst_json: (a: number, b: number, c: number, d: number, e: bigint) => any;
   readonly run_ir_json: (a: number, b: number, c: bigint) => any;
   readonly run_ir_simple: (a: number, b: number, c: bigint) => number;
+  readonly unicode_completions: (a: number, b: number) => any;
+  readonly unicode_expand: (a: number, b: number) => [number, number];
+  readonly unicode_lookup: (a: number, b: number) => [number, number];
+  readonly unicode_reverse_lookup: (a: number, b: number) => [number, number];
   readonly free_execution_result: (a: number) => void;
   readonly free_string: (a: number) => void;
   readonly run_ir_json_f64: (a: number) => number;

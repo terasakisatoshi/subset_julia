@@ -1,7 +1,8 @@
 // SubsetVM Playground - Main Application (Monaco Editor version)
-import { samplesIR } from './samples_ir.js?v=20';
-import { Lowering } from './lowering.js?v=6';
-import { registerJuliaLanguage } from './julia-language.js?v=2';
+import { samplesIR } from './samples_ir.js?v=23';
+import { registerJuliaLanguage, setWasmModule } from './julia-language.js?v=3';
+
+// Note: lowering.js is no longer needed - we use Rust-based lowering via run_from_cst_json
 
 // TreeSitter will be loaded dynamically
 let TreeSitter = null;
@@ -9,11 +10,13 @@ let TreeSitter = null;
 // Elements
 const sampleSelect = document.getElementById('sample-select');
 const runBtn = document.getElementById('run-btn');
-const clearBtn = document.getElementById('clear-btn');
+const copySourceBtn = document.getElementById('copy-source-btn');
 const output = document.getElementById('output');
 const result = document.getElementById('result');
 const errorDiv = document.getElementById('error');
 const versionSpan = document.getElementById('version');
+const copyBtn = document.getElementById('copy-btn');
+const clearOutputBtn = document.getElementById('clear-output-btn');
 
 // State
 let wasm = null;
@@ -21,8 +24,16 @@ let parser = null;
 let editor = null;
 let currentSampleIndex = 0;
 
+// Detect macOS
+const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
+const runShortcut = isMac ? '⌘+Enter' : 'Ctrl+Enter';
+const runButtonText = `Run (${runShortcut})`;
+
 // Initialize the application
 async function init() {
+    // Set button text with platform-appropriate shortcut
+    runBtn.textContent = runButtonText;
+
     // Populate sample selector
     populateSamples();
 
@@ -31,6 +42,11 @@ async function init() {
 
     // Load WASM module, parser, and Monaco in parallel
     await Promise.all([loadWasm(), loadParser(), loadMonaco()]);
+
+    // Set WASM module for Unicode completion provider
+    if (wasm) {
+        setWasmModule(wasm);
+    }
 
     // Display version
     if (wasm) {
@@ -142,12 +158,75 @@ function setupEventListeners() {
     // Run button
     runBtn.addEventListener('click', run);
 
-    // Clear button
-    clearBtn.addEventListener('click', () => {
+    // Copy source button
+    copySourceBtn.addEventListener('click', copySource);
+
+    // Copy button
+    copyBtn.addEventListener('click', copyOutput);
+
+    // Clear output button
+    clearOutputBtn.addEventListener('click', () => {
         output.textContent = '';
         result.textContent = '';
         hideError();
     });
+}
+
+async function copySource() {
+    if (!editor) return;
+    const text = editor.getValue();
+    if (!text) return;
+
+    try {
+        await navigator.clipboard.writeText(text);
+        copySourceBtn.textContent = 'Copied!';
+        copySourceBtn.classList.add('copied');
+        setTimeout(() => {
+            copySourceBtn.textContent = 'Copy';
+            copySourceBtn.classList.remove('copied');
+        }, 1500);
+    } catch (e) {
+        console.error('Failed to copy:', e);
+    }
+}
+
+async function copyOutput() {
+    const text = output.textContent;
+    if (!text) {
+        return;
+    }
+
+    try {
+        await navigator.clipboard.writeText(text);
+        // Show visual feedback
+        copyBtn.textContent = 'Copied!';
+        copyBtn.classList.add('copied');
+        setTimeout(() => {
+            copyBtn.textContent = 'Copy';
+            copyBtn.classList.remove('copied');
+        }, 1500);
+    } catch (e) {
+        console.error('Failed to copy:', e);
+        // Fallback for older browsers
+        const textArea = document.createElement('textarea');
+        textArea.value = text;
+        textArea.style.position = 'fixed';
+        textArea.style.opacity = '0';
+        document.body.appendChild(textArea);
+        textArea.select();
+        try {
+            document.execCommand('copy');
+            copyBtn.textContent = 'Copied!';
+            copyBtn.classList.add('copied');
+            setTimeout(() => {
+                copyBtn.textContent = 'Copy';
+                copyBtn.classList.remove('copied');
+            }, 1500);
+        } catch (e2) {
+            console.error('Fallback copy failed:', e2);
+        }
+        document.body.removeChild(textArea);
+    }
 }
 
 async function loadWasm() {
@@ -213,7 +292,7 @@ async function run() {
         showError(e.message || 'Execution failed');
     } finally {
         runBtn.disabled = false;
-        runBtn.textContent = 'Run (Ctrl+Enter)';
+        runBtn.textContent = runButtonText;
     }
 }
 
@@ -234,16 +313,14 @@ async function runCustomCode(code, seed) {
             }
         }
 
-        // Lower to Core IR
-        console.log('Lowering to IR...');
-        const lowering = new Lowering(code);
-        const program = lowering.lower(tree);
-        console.log('IR program:', JSON.stringify(program, null, 2));
+        // Serialize CST to JSON (for Rust-based lowering)
+        console.log('Serializing CST to JSON...');
+        const cstJson = serializeCst(tree.rootNode, code);
+        console.log('CST JSON length:', cstJson.length);
 
-        // Convert to JSON and execute
-        const irJson = JSON.stringify(program);
-        console.log('Executing IR...');
-        const execResult = wasm.run_ir_json(irJson, BigInt(seed));
+        // Execute using Rust-based lowering
+        console.log('Executing with Rust-based lowering...');
+        const execResult = wasm.run_from_cst_json(cstJson, code, BigInt(seed));
 
         displayResult(execResult);
 
@@ -251,6 +328,41 @@ async function runCustomCode(code, seed) {
         console.error('Error:', e);
         showError(`Compilation error: ${e.message}`);
     }
+}
+
+// Serialize a tree-sitter node to JSON format expected by JsonCstNode
+function serializeCst(node, source) {
+    return JSON.stringify(serializeNode(node, source));
+}
+
+// Recursively serialize a tree-sitter node
+function serializeNode(node, source) {
+    // Extract text from source using byte indices
+    // This is more reliable than node.text which may not always be available
+    const text = source.substring(node.startIndex, node.endIndex);
+
+    const result = {
+        type: node.type,
+        start: node.startIndex,
+        end: node.endIndex,
+        start_line: node.startPosition.row + 1, // 1-indexed
+        end_line: node.endPosition.row + 1,     // 1-indexed
+        start_column: node.startPosition.column + 1, // 1-indexed
+        end_column: node.endPosition.column + 1,     // 1-indexed
+        is_named: node.isNamed,
+        text: text,
+        children: []
+    };
+
+    // Serialize all children
+    for (let i = 0; i < node.childCount; i++) {
+        const child = node.child(i);
+        if (child) {
+            result.children.push(serializeNode(child, source));
+        }
+    }
+
+    return result;
 }
 
 function findErrors(node, errors = []) {

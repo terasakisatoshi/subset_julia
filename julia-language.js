@@ -1,6 +1,13 @@
 // Julia language definition for Monaco Editor
 // Based on Monokai theme colors
 
+// Store wasm module reference for completion provider
+let wasmModule = null;
+
+export function setWasmModule(wasm) {
+    wasmModule = wasm;
+}
+
 export function registerJuliaLanguage(monaco) {
     // Register Julia language
     monaco.languages.register({ id: 'julia' });
@@ -220,6 +227,63 @@ export function registerJuliaLanguage(monaco) {
         indentationRules: {
             increaseIndentPattern: /^\s*(function|if|elseif|else|for|while|try|catch|finally|let|do|begin|struct|mutable|module|baremodule)\b.*$/,
             decreaseIndentPattern: /^\s*(end|else|elseif|catch|finally)\b.*$/
+        }
+    });
+
+    // Register Unicode completion provider for LaTeX sequences
+    monaco.languages.registerCompletionItemProvider('julia', {
+        triggerCharacters: ['\\'],
+        provideCompletionItems: (model, position) => {
+            if (!wasmModule) {
+                return { suggestions: [] };
+            }
+
+            // Get text before cursor on current line
+            const lineContent = model.getLineContent(position.lineNumber);
+            const textBeforeCursor = lineContent.substring(0, position.column - 1);
+
+            // Find the last backslash
+            const backslashIndex = textBeforeCursor.lastIndexOf('\\');
+            if (backslashIndex === -1) {
+                return { suggestions: [] };
+            }
+
+            // Extract the LaTeX prefix (including backslash)
+            const prefix = textBeforeCursor.substring(backslashIndex);
+
+            // Get completions from WASM module
+            let completions;
+            try {
+                completions = wasmModule.unicode_completions(prefix);
+            } catch (e) {
+                console.error('Unicode completions error:', e);
+                return { suggestions: [] };
+            }
+
+            if (!completions || !Array.isArray(completions)) {
+                return { suggestions: [] };
+            }
+
+            // Calculate the range to replace (from backslash to cursor)
+            const range = {
+                startLineNumber: position.lineNumber,
+                startColumn: backslashIndex + 1, // +1 for 1-based indexing
+                endLineNumber: position.lineNumber,
+                endColumn: position.column
+            };
+
+            // Convert to Monaco completion items
+            const suggestions = completions.map(([latex, unicode], index) => ({
+                label: `${unicode} ${latex}`,
+                kind: monaco.languages.CompletionItemKind.Text,
+                insertText: unicode,
+                range: range,
+                detail: latex,
+                sortText: String(index).padStart(5, '0'), // Preserve order from WASM
+                filterText: latex // Allow filtering by LaTeX command
+            }));
+
+            return { suggestions };
         }
     });
 }

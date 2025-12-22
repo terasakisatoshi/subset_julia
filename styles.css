@@ -140,16 +140,49 @@ main {
     min-height: 400px;
 }
 
-.output-container h2 {
+.output-header {
+    display: flex;
+    justify-content: flex-start;
+    align-items: center;
+    gap: 1rem;
     padding: 0.75rem 1rem;
-    font-size: 1rem;
     background: var(--bg-tertiary);
     border-bottom: 1px solid #49483e;
 }
 
+.output-header h2 {
+    font-size: 1rem;
+    margin: 0;
+}
+
+#copy-btn,
+#clear-output-btn {
+    padding: 0.35rem 0.75rem;
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+    border: 1px solid #49483e;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.8rem;
+    transition: background 0.2s, border-color 0.2s;
+}
+
+#copy-btn:hover,
+#clear-output-btn:hover {
+    background: var(--bg-primary);
+    border-color: var(--accent);
+}
+
+#copy-btn.copied,
+#clear-output-btn.copied {
+    background: var(--success);
+    color: var(--bg-primary);
+    border-color: var(--success);
+}
+
 #output {
     flex: 1;
-    min-height: 300px;
+    min-height: 100px;
     padding: 1rem;
     background: var(--bg-primary);
     font-family: 'Fira Code', 'Consolas', 'Monaco', monospace;
@@ -169,9 +202,15 @@ main {
 
 #error {
     padding: 0.75rem 1rem;
-    background: rgba(241, 76, 76, 0.1);
-    border-top: 1px solid var(--error);
+    background: rgba(249, 38, 114, 0.15);
+    border: 1px solid var(--error);
+    border-radius: 4px;
+    margin: 0.5rem;
     color: var(--error);
+    font-family: 'Fira Code', 'Consolas', 'Monaco', monospace;
+    font-size: 13px;
+    white-space: pre-wrap;
+    word-break: break-word;
 }
 
 .hidden {

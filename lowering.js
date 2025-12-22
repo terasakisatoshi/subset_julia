@@ -5,6 +5,7 @@ export class Lowering {
     constructor(source) {
         this.source = source;
         this.functions = [];
+        this.structs = [];
         this.lambdaCounter = 0;
     }
 
@@ -22,6 +23,7 @@ export class Lowering {
 
         this.lowerSourceFile(tree.rootNode, program);
         program.functions = this.functions;
+        program.structs = this.structs;
         return program;
     }
 
@@ -31,11 +33,111 @@ export class Lowering {
             if (child.type === 'function_definition') {
                 const func = this.lowerFunction(child);
                 if (func) this.functions.push(func);
+            } else if (child.type === 'struct_definition') {
+                const struct = this.lowerStruct(child);
+                if (struct) this.structs.push(struct);
             } else if (!this.isTrivia(child)) {
                 const stmt = this.lowerStmt(child);
                 if (stmt) program.main.stmts.push(stmt);
             }
         }
+    }
+
+    lowerStruct(node) {
+        const span = this.nodeSpan(node);
+        let name = '';
+        let isMutable = false;
+        const fields = [];
+
+        // Check if mutable by looking at source text
+        const text = this.getText(node);
+        if (text.startsWith('mutable')) {
+            isMutable = true;
+        }
+
+        for (let i = 0; i < node.childCount; i++) {
+            const child = node.child(i);
+            if (child.type === 'mutable' || child.type === 'struct' || child.type === 'end') {
+                continue;
+            } else if (child.type === 'identifier' && !name) {
+                name = this.getText(child);
+            } else if (child.type === 'type_head') {
+                // Type head wraps the struct name
+                for (let j = 0; j < child.childCount; j++) {
+                    const subchild = child.child(j);
+                    if (subchild.type === 'identifier' && !name) {
+                        name = this.getText(subchild);
+                    }
+                }
+            } else if (child.type === 'block') {
+                // Parse fields from the block
+                this.parseStructFields(child, fields);
+            }
+        }
+
+        return { name, is_mutable: isMutable, type_params: [], fields, span };
+    }
+
+    parseStructFields(blockNode, fields) {
+        for (let i = 0; i < blockNode.childCount; i++) {
+            const child = blockNode.child(i);
+            if (child.type === 'typed_expression' || child.type === 'typed_parameter') {
+                // field::Type
+                const field = this.parseTypedField(child);
+                if (field) fields.push(field);
+            } else if (child.type === 'identifier') {
+                // Untyped field
+                fields.push({
+                    name: this.getText(child),
+                    type_expr: null,
+                    span: this.nodeSpan(child)
+                });
+            }
+        }
+    }
+
+    parseTypedField(node) {
+        const span = this.nodeSpan(node);
+        let fieldName = '';
+        let typeExpr = null;
+
+        for (let i = 0; i < node.childCount; i++) {
+            const child = node.child(i);
+            if (child.type === 'identifier') {
+                if (!fieldName) {
+                    fieldName = this.getText(child);
+                } else {
+                    // Type annotation
+                    const typeName = this.getText(child);
+                    typeExpr = { Concrete: this.mapJuliaType(typeName) };
+                }
+            } else if (child.type === 'type_clause') {
+                // ::Type - extract the type from inside
+                for (let j = 0; j < child.childCount; j++) {
+                    const subchild = child.child(j);
+                    if (subchild.type === 'identifier') {
+                        const typeName = this.getText(subchild);
+                        typeExpr = { Concrete: this.mapJuliaType(typeName) };
+                    }
+                }
+            }
+        }
+
+        if (!fieldName) return null;
+        return { name: fieldName, type_expr: typeExpr, span };
+    }
+
+    mapJuliaType(typeName) {
+        const typeMap = {
+            'Int64': 'Int64',
+            'Int': 'Int64',
+            'Float64': 'Float64',
+            'Float': 'Float64',
+            'Bool': 'Bool',
+            'String': 'String',
+            'Any': 'Any',
+        };
+        return typeMap[typeName] || 'Any';
     }
 
     lowerFunction(node) {
@@ -171,6 +273,8 @@ export class Lowering {
             case 'compound_statement':
                 // Handle semicolon-separated statements: a = 1; b = 2
                 return this.lowerCompoundStatement(node);
+            case 'try_statement':
+                return this.lowerTryCatch(node);
             default:
                 // Treat as expression statement
                 const expr = this.lowerExpr(node);
@@ -281,6 +385,28 @@ export class Lowering {
                     span
                 }
             };
+        } else if (left.type === 'field_expression') {
+            // Field assignment: obj.field = value
+            let objectName = '';
+            let field = '';
+            for (let i = 0; i < left.childCount; i++) {
+                const child = left.child(i);
+                if (child.type === '.') continue;
+                if (this.isTrivia(child)) continue;
+                if (!objectName) {
+                    objectName = this.getText(child);
+                } else {
+                    field = this.getText(child);
+                }
+            }
+            return {
+                FieldAssign: {
+                    object: objectName,
+                    field,
+                    value: this.lowerExpr(right),
+                    span
+                }
+            };
         }
 
         // Fallback: treat as expression
@@ -298,6 +424,31 @@ export class Lowering {
                 AddAssign: {
                     var: this.getText(left),
                     value: this.lowerExpr(right),
+                    span
+                }
+            };
+        }
+
+        // Handle indexed compound assignments by converting to IndexAssign with BinaryOp
+        // arr[i] += value becomes arr[i] = arr[i] + value
+        if (left.type === 'index_expression') {
+            const array = left.child(0);
+            const bracket = left.child(1);
+            const indices = this.lowerIndexArgs(bracket);
+            const opText = this.getText(op).replace('=', '');
+            const binaryOp = this.mapBinaryOp(opText);
+            return {
+                IndexAssign: {
+                    array: this.getText(array),
+                    indices,
+                    value: {
+                        BinaryOp: {
+                            op: binaryOp,
+                            left: this.lowerExpr(left),  // arr[i]
+                            right: this.lowerExpr(right), // value
+                            span
+                        }
+                    },
                     span
                 }
             };
@@ -356,7 +507,78 @@ export class Lowering {
         }
 
         const body = { stmts: bodyStmts, span };
-        return { For: { var: varName, start, end, body, span } };
+        return { For: { var: varName, start, end, step: null, body, span } };
+    }
+
+    lowerTryCatch(node) {
+        const span = this.nodeSpan(node);
+        let tryBody = { stmts: [], span };
+        let catchBody = { stmts: [], span };
+        let finallyBody = null;
+        let errorVar = 'e';
+
+        let phase = 'try';
+        for (let i = 0; i < node.childCount; i++) {
+            const child = node.child(i);
+            if (child.type === 'try' || child.type === 'end') continue;
+            if (this.isTrivia(child)) continue;
+
+            if (child.type === 'catch_clause') {
+                phase = 'catch';
+                // Find error variable and body
+                for (let j = 0; j < child.childCount; j++) {
+                    const subchild = child.child(j);
+                    if (subchild.type === 'catch') continue;
+                    if (this.isTrivia(subchild)) continue;
+                    if (subchild.type === 'identifier') {
+                        errorVar = this.getText(subchild);
+                    } else if (subchild.type === 'block') {
+                        catchBody.stmts = this.lowerBlock(subchild);
+                    } else {
+                        const stmt = this.lowerStmt(subchild);
+                        if (stmt) catchBody.stmts.push(stmt);
+                    }
+                }
+                continue;
+            }
+
+            if (child.type === 'finally_clause') {
+                phase = 'finally';
+                finallyBody = { stmts: [], span: this.nodeSpan(child) };
+                for (let j = 0; j < child.childCount; j++) {
+                    const subchild = child.child(j);
+                    if (subchild.type === 'finally') continue;
+                    if (this.isTrivia(subchild)) continue;
+                    if (subchild.type === 'block') {
+                        finallyBody.stmts = this.lowerBlock(subchild);
+                    } else {
+                        const stmt = this.lowerStmt(subchild);
+                        if (stmt) finallyBody.stmts.push(stmt);
+                    }
+                }
+                continue;
+            }
+
+            if (phase === 'try') {
+                if (child.type === 'block') {
+                    tryBody.stmts = this.lowerBlock(child);
+                } else {
+                    const stmt = this.lowerStmt(child);
+                    if (stmt) tryBody.stmts.push(stmt);
+                }
+            }
+        }
+
+        return {
+            Try: {
+                try_block: tryBody,
+                catch_var: errorVar,
+                catch_block: catchBody.stmts.length > 0 ? catchBody : null,
+                else_block: null,
+                finally_block: finallyBody,
+                span
+            }
+        };
     }
 
     lowerWhile(node) {
@@ -545,10 +767,9 @@ export class Lowering {
             case 'float_literal':
                 return { Literal: [{ Float: parseFloat(this.getText(node)) }, span] };
             case 'string_literal':
-                const strText = this.getText(node);
-                // Remove quotes
-                const strContent = strText.slice(1, -1);
-                return { Literal: [{ Str: strContent }, span] };
+                return this.lowerString(node);
+            case 'interpolated_string_literal':
+                return this.lowerInterpolatedString(node);
             case 'boolean_literal':
                 return { Literal: [{ Bool: this.getText(node) === 'true' }, span] };
             case 'identifier':
@@ -566,18 +787,44 @@ export class Lowering {
             case 'unary_expression':
                 return this.lowerUnaryExpr(node);
             case 'call_expression':
+                // Check if followed by do block
                 return this.lowerCall(node);
+            case 'do_expression':
+                return this.lowerCallWithDo(node);
             case 'parenthesized_expression':
                 return this.lowerExpr(node.child(1));
             case 'array_expression':
+            case 'vector_expression':
                 return this.lowerArray(node);
+            case 'comprehension_expression':
+            case 'array_comprehension_expression':
+            case 'generator_expression':
+                return this.lowerComprehension(node);
             case 'index_expression':
                 return this.lowerIndex(node);
             case 'range_expression':
                 return this.lowerRange(node);
+            case 'broadcast_call_expression':
+                return this.lowerBroadcastCall(node);
+            case 'field_expression':
+                return this.lowerFieldAccess(node);
+            case 'adjoint_expression':
+            case 'prime_expression':
+                return this.lowerTranspose(node);
+            case 'do_clause':
+                // do clause is typically handled by call_expression
+                return this.lowerDoClause(node);
             case 'macrocall_expression':
             case 'macro_expression':
                 return this.lowerMacro(node);
+            case 'ternary_expression':
+                return this.lowerTernary(node);
+            case 'arrow_function_expression':
+                return this.lowerArrowFunction(node);
+            case 'juxtaposition_expression':
+                return this.lowerJuxtaposition(node);
+            case 'matrix_expression':
+                return this.lowerMatrix(node);
             default:
                 // Try to find meaningful child
                 for (let i = 0; i < node.childCount; i++) {
@@ -714,7 +961,22 @@ export class Lowering {
         const opNode = node.child(1);
         const right = node.child(2);
 
-        const op = this.mapBinaryOp(this.getText(opNode));
+        const opText = this.getText(opNode);
+
+        // Check for broadcast operators (.+, .-, .*, ./, .^)
+        // These are represented as Call expressions in Rust
+        if (opText.startsWith('.') && opText.length > 1) {
+            return {
+                Call: {
+                    function: opText,
+                    args: [this.lowerExpr(left), this.lowerExpr(right)],
+                    kwargs: [],
+                    span
+                }
+            };
+        }
+
+        const op = this.mapBinaryOp(opText);
 
         return {
             BinaryOp: {
@@ -760,7 +1022,8 @@ export class Lowering {
             }
         }
 
-        // Check for builtin functions
+        // Check for builtin functions (only true builtins that map to BuiltinOp)
+        // Note: sum is handled as Call to support both sum(arr) and sum(f, arr)
         const builtins = {
             'length': 'Length',
             'size': 'Size',
@@ -772,10 +1035,10 @@ export class Lowering {
             'push!': 'Push',
             'pop!': 'Pop',
             'rand': 'Rand',
+            'randn': 'Randn',
             'sqrt': 'Sqrt',
             'abs': 'Abs',
             'abs2': 'Abs2',
-            'sum': 'Sum',
             'real': 'Real',
             'imag': 'Imag',
             'conj': 'Conj',
@@ -787,6 +1050,45 @@ export class Lowering {
             return { Builtin: { name: builtins[funcName], args, span } };
         }
 
+        // All other functions (including println, print, map, filter, reduce, foreach)
+        // are handled as Call expressions
+        return { Call: { function: funcName, args, kwargs: [], span } };
+    }
+
+    lowerCallWithDo(node) {
+        // Handle function call with do ... end block
+        // e.g., map([1,2,3]) do x; x^2 end
+        const span = this.nodeSpan(node);
+        let funcName = '';
+        const args = [];
+        let doBlock = null;
+
+        for (let i = 0; i < node.childCount; i++) {
+            const child = node.child(i);
+            if (child.type === 'call_expression') {
+                // Parse the call expression to get function name and arguments
+                const funcNode = child.child(0);
+                funcName = this.getText(funcNode);
+                const argList = child.child(1);
+                if (argList && argList.type === 'argument_list') {
+                    for (let j = 0; j < argList.childCount; j++) {
+                        const argChild = argList.child(j);
+                        if (!this.isTrivia(argChild) && argChild.type !== '(' && argChild.type !== ')' && argChild.type !== ',') {
+                            args.push(this.lowerExpr(argChild));
+                        }
+                    }
+                }
+            } else if (child.type === 'do_clause') {
+                doBlock = this.lowerDoClause(child);
+            }
+        }
+
+        // Insert do block (FunctionRef) as first argument
+        if (doBlock) {
+            args.unshift(doBlock);
+        }
+
+        // All functions with do syntax are Call expressions
         return { Call: { function: funcName, args, kwargs: [], span } };
     }
 
@@ -833,14 +1135,275 @@ export class Lowering {
 
     lowerRange(node) {
         const span = this.nodeSpan(node);
-        const start = node.child(0);
-        const end = node.child(2);
+
+        // Count the colon operators to determine if this is start:end or start:step:end
+        const children = [];
+        for (let i = 0; i < node.childCount; i++) {
+            const child = node.child(i);
+            if (!this.isTrivia(child) && child.type !== ':') {
+                children.push(child);
+            }
+        }
+
+        if (children.length === 3) {
+            // start:step:end
+            return {
+                Range: {
+                    start: this.lowerExpr(children[0]),
+                    step: this.lowerExpr(children[1]),
+                    stop: this.lowerExpr(children[2]),
+                    span
+                }
+            };
+        } else {
+            // start:end
+            return {
+                Range: {
+                    start: this.lowerExpr(children[0]),
+                    step: null,
+                    stop: this.lowerExpr(children[1]),
+                    span
+                }
+            };
+        }
+    }
+
+    lowerString(node) {
+        const span = this.nodeSpan(node);
+        const text = this.getText(node);
+        // Remove quotes and handle escape sequences
+        let content = text.slice(1, -1);
+        content = content.replace(/\\n/g, '\n')
+                        .replace(/\\t/g, '\t')
+                        .replace(/\\"/g, '"')
+                        .replace(/\\\\/g, '\\');
+        return { Literal: [{ Str: content }, span] };
+    }
+
+    lowerInterpolatedString(node) {
+        const span = this.nodeSpan(node);
+        const parts = [];
+
+        for (let i = 0; i < node.childCount; i++) {
+            const child = node.child(i);
+            if (child.type === '"') continue;
+            if (child.type === 'string_content') {
+                const text = this.getText(child);
+                parts.push({ Literal: [{ Str: text }, this.nodeSpan(child)] });
+            } else if (child.type === 'interpolation_expression' || child.type === 'interpolation') {
+                // Find the expression inside $(...) or $var
+                for (let j = 0; j < child.childCount; j++) {
+                    const subchild = child.child(j);
+                    if (subchild.type !== '$' && subchild.type !== '(' && subchild.type !== ')') {
+                        parts.push(this.lowerExpr(subchild));
+                    }
+                }
+            }
+        }
+
+        if (parts.length === 0) {
+            return { Literal: [{ Str: '' }, span] };
+        }
+        if (parts.length === 1 && parts[0].Literal) {
+            return parts[0];
+        }
+
+        return { StringConcat: { parts, span } };
+    }
+
+    lowerComprehension(node) {
+        const span = this.nodeSpan(node);
+        let expr = null;
+        let varName = '';
+        let iter = null;
+        let filter = null;
+
+        for (let i = 0; i < node.childCount; i++) {
+            const child = node.child(i);
+            if (child.type === '[' || child.type === ']') continue;
+            if (this.isTrivia(child)) continue;
+
+            if (child.type === 'for_clause' || child.type === 'generator_expression') {
+                // Parse for clause
+                for (let j = 0; j < child.childCount; j++) {
+                    const subchild = child.child(j);
+                    if (subchild.type === 'for' || subchild.type === 'in') continue;
+                    if (this.isTrivia(subchild)) continue;
+
+                    if (subchild.type === 'for_binding') {
+                        const binding = subchild;
+                        const varNode = binding.child(0);
+                        varName = this.getText(varNode);
+                        const iterNode = binding.child(2);
+                        iter = this.lowerExpr(iterNode);
+                    } else if (subchild.type === 'if_clause') {
+                        // Parse filter condition
+                        for (let k = 0; k < subchild.childCount; k++) {
+                            const ifChild = subchild.child(k);
+                            if (ifChild.type === 'if') continue;
+                            if (this.isTrivia(ifChild)) continue;
+                            filter = this.lowerExpr(ifChild);
+                        }
+                    } else if (!expr && subchild.type !== 'identifier') {
+                        expr = this.lowerExpr(subchild);
+                    } else if (subchild.type === 'identifier' && !varName) {
+                        varName = this.getText(subchild);
+                    }
+                }
+            } else if (child.type === 'if_clause') {
+                // Parse filter condition
+                for (let j = 0; j < child.childCount; j++) {
+                    const subchild = child.child(j);
+                    if (subchild.type === 'if') continue;
+                    if (this.isTrivia(subchild)) continue;
+                    filter = this.lowerExpr(subchild);
+                }
+            } else if (!expr) {
+                expr = this.lowerExpr(child);
+            }
+        }
 
         return {
-            Range: {
-                start: this.lowerExpr(start),
-                step: null,
-                stop: this.lowerExpr(end),
+            Comprehension: {
+                body: expr,
+                var: varName,
+                iter,
+                filter,
+                span
+            }
+        };
+    }
+
+    lowerBroadcastCall(node) {
+        const span = this.nodeSpan(node);
+        let funcName = '';
+        const args = [];
+
+        for (let i = 0; i < node.childCount; i++) {
+            const child = node.child(i);
+            if (child.type === 'identifier') {
+                funcName = this.getText(child);
+            } else if (child.type === 'argument_list') {
+                for (let j = 0; j < child.childCount; j++) {
+                    const argChild = child.child(j);
+                    if (!this.isTrivia(argChild) && argChild.type !== '(' && argChild.type !== ')' && argChild.type !== ',' && argChild.type !== '.') {
+                        args.push(this.lowerExpr(argChild));
+                    }
+                }
+            }
+        }
+
+        // Broadcast calls are represented as Call with function name ".func"
+        // e.g., sqrt.(x) becomes Call { function: ".sqrt", args: [x] }
+        return {
+            Call: {
+                function: '.' + funcName,
+                args,
+                kwargs: [],
+                span
+            }
+        };
+    }
+
+    lowerFieldAccess(node) {
+        const span = this.nodeSpan(node);
+        let object = null;
+        let field = '';
+
+        for (let i = 0; i < node.childCount; i++) {
+            const child = node.child(i);
+            if (child.type === '.') continue;
+            if (this.isTrivia(child)) continue;
+
+            if (!object) {
+                object = this.lowerExpr(child);
+            } else {
+                field = this.getText(child);
+            }
+        }
+
+        return { FieldAccess: { object, field, span } };
+    }
+
+    lowerTranspose(node) {
+        const span = this.nodeSpan(node);
+        const operand = node.child(0);
+        // Adjoint (') is a builtin operator in Rust
+        return {
+            Builtin: {
+                name: 'Adjoint',
+                args: [this.lowerExpr(operand)],
+                span
+            }
+        };
+    }
+
+    lowerDoClause(node) {
+        const span = this.nodeSpan(node);
+        const params = [];
+        const bodyStmts = [];
+
+        for (let i = 0; i < node.childCount; i++) {
+            const child = node.child(i);
+            if (child.type === 'do' || child.type === 'end') continue;
+            if (this.isTrivia(child)) continue;
+
+            if (child.type === 'identifier') {
+                params.push({
+                    name: this.getText(child),
+                    type_annotation: null,
+                    span: this.nodeSpan(child)
+                });
+            } else if (child.type === 'block') {
+                bodyStmts.push(...this.lowerBlock(child));
+            } else if (child.type === 'tuple_expression') {
+                // Multiple parameters: (x, y)
+                for (let j = 0; j < child.childCount; j++) {
+                    const paramChild = child.child(j);
+                    if (paramChild.type === 'identifier') {
+                        params.push({
+                            name: this.getText(paramChild),
+                            type_annotation: null,
+                            span: this.nodeSpan(paramChild)
+                        });
+                    }
+                }
+            } else {
+                const stmt = this.lowerStmt(child);
+                if (stmt) bodyStmts.push(stmt);
+            }
+        }
+
+        // Generate a unique lambda name
+        const lambdaName = `__lambda_${this.lambdaCounter++}`;
+
+        // Register as a function
+        this.functions.push({
+            name: lambdaName,
+            params,
+            kwparams: [],
+            body: { stmts: bodyStmts, span },
+            span
+        });
+
+        // Return FunctionRef to the lambda
+        return { FunctionRef: { name: lambdaName, span } };
+    }
+
+    lowerTernary(node) {
+        const span = this.nodeSpan(node);
+        const condition = node.child(0);
+        const thenExpr = node.child(2);
+        const elseExpr = node.child(4);
+
+        return {
+            Builtin: {
+                name: 'IfElse',
+                args: [
+                    this.lowerExpr(condition),
+                    this.lowerExpr(thenExpr),
+                    this.lowerExpr(elseExpr)
+                ],
                 span
             }
         };
@@ -886,6 +1449,116 @@ export class Lowering {
             '&&': 'And', '||': 'Or'
         };
         return ops[op] || 'Add';
+    }
+
+    lowerArrowFunction(node) {
+        // Lambda: x -> x^2 or (x, y) -> x + y
+        const span = this.nodeSpan(node);
+        const params = [];
+        let body = null;
+
+        for (let i = 0; i < node.childCount; i++) {
+            const child = node.child(i);
+            if (child.type === 'identifier') {
+                // Single parameter
+                params.push({
+                    name: this.getText(child),
+                    type_annotation: null,
+                    span: this.nodeSpan(child)
+                });
+            } else if (child.type === 'tuple_expression' || child.type === 'bare_tuple') {
+                // Multiple parameters: (x, y)
+                for (let j = 0; j < child.childCount; j++) {
+                    const paramChild = child.child(j);
+                    if (paramChild.type === 'identifier') {
+                        params.push({
+                            name: this.getText(paramChild),
+                            type_annotation: null,
+                            span: this.nodeSpan(paramChild)
+                        });
+                    }
+                }
+            } else if (child.type !== '->' && !this.isTrivia(child)) {
+                // This is the body
+                body = this.lowerExpr(child);
+            }
+        }
+
+        // Generate a unique lambda name
+        const lambdaName = `__lambda_${this.lambdaCounter++}`;
+
+        // Create function definition
+        this.functions.push({
+            name: lambdaName,
+            params,
+            kwparams: [],
+            body: { stmts: [{ Expr: { expr: body, span } }], span },
+            span
+        });
+
+        // Return FunctionRef to the lambda
+        return { FunctionRef: { name: lambdaName, span } };
+    }
+
+    lowerJuxtaposition(node) {
+        // Implicit multiplication: 2x means 2 * x
+        const span = this.nodeSpan(node);
+        const left = node.child(0);
+        const right = node.child(1);
+
+        return {
+            BinaryOp: {
+                op: 'Mul',
+                left: this.lowerExpr(left),
+                right: this.lowerExpr(right),
+                span
+            }
+        };
+    }
+
+    lowerMatrix(node) {
+        // Matrix: [1 2; 3 4] - 2D array
+        const span = this.nodeSpan(node);
+        const rows = [];
+        let currentRow = [];
+
+        for (let i = 0; i < node.childCount; i++) {
+            const child = node.child(i);
+            if (child.type === '[' || child.type === ']') continue;
+            if (this.isTrivia(child)) continue;
+
+            if (child.type === 'matrix_row') {
+                // Collect elements from the row
+                for (let j = 0; j < child.childCount; j++) {
+                    const elem = child.child(j);
+                    if (!this.isTrivia(elem)) {
+                        currentRow.push(this.lowerExpr(elem));
+                    }
+                }
+                if (currentRow.length > 0) {
+                    rows.push(currentRow);
+                    currentRow = [];
+                }
+            } else if (child.type === ';') {
+                // Row separator
+                if (currentRow.length > 0) {
+                    rows.push(currentRow);
+                    currentRow = [];
+                }
+            } else {
+                currentRow.push(this.lowerExpr(child));
+            }
+        }
+
+        if (currentRow.length > 0) {
+            rows.push(currentRow);
+        }
+
+        // Flatten to 1D and compute shape
+        const elements = rows.flat();
+        const shape = rows.length > 0 ? [rows.length, rows[0].length] : [0, 0];
+
+        return { ArrayLiteral: { elements, shape, span } };
     }
 
     nodeSpan(node) {
