@@ -1,16 +1,16 @@
 {
-  "name": "subset_vm_web",
+  "name": "subset_julia_vm_web",
   "type": "module",
-  "description": "WebAssembly binding for SubsetVM - Julia subset interpreter",
+  "description": "WebAssembly binding for SubsetJuliaVM - Julia subset interpreter",
   "version": "0.1.0",
   "license": "MIT",
   "files": [
-    "subset_vm_web_bg.wasm",
-    "subset_vm_web.js",
-    "subset_vm_web.d.ts"
+    "subset_julia_vm_web_bg.wasm",
+    "subset_julia_vm_web.js",
+    "subset_julia_vm_web.d.ts"
   ],
-  "main": "subset_vm_web.js",
-  "types": "subset_vm_web.d.ts",
+  "main": "subset_julia_vm_web.js",
+  "types": "subset_julia_vm_web.d.ts",
   "sideEffects": [
     "./snippets/*"
   ]
