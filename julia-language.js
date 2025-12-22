@@ -20,7 +20,7 @@ export function registerJuliaLanguage(monaco) {
             'try', 'catch', 'finally', 'throw',
             'struct', 'mutable', 'abstract', 'primitive', 'type',
             'module', 'baremodule', 'using', 'import', 'export',
-            'const', 'global', 'local', 'where'
+            'const', 'global', 'local', 'where', 'isa'
         ],
 
         builtins: [
@@ -30,11 +30,24 @@ export function registerJuliaLanguage(monaco) {
             'push!', 'pop!', 'append!', 'sort!', 'reverse!',
             'zeros', 'ones', 'fill', 'rand', 'randn',
             'map', 'filter', 'reduce', 'foreach',
-            'typeof', 'isa', 'convert', 'collect', 'range',
-            'ifelse', 'gcd', 'lcm'
+            'typeof', 'convert', 'collect', 'range',
+            'ifelse', 'gcd', 'lcm', 'real', 'imag', 'conj',
+            'complex', 'adjoint', 'transpose'
         ],
 
-        constants: ['true', 'false', 'nothing', 'missing', 'Inf', 'NaN', 'pi'],
+        types: [
+            'Int', 'Int8', 'Int16', 'Int32', 'Int64', 'Int128',
+            'UInt', 'UInt8', 'UInt16', 'UInt32', 'UInt64', 'UInt128',
+            'Float16', 'Float32', 'Float64',
+            'Bool', 'Char', 'String',
+            'Complex', 'ComplexF64', 'ComplexF32',
+            'Array', 'Vector', 'Matrix',
+            'Any', 'Number', 'Real', 'Integer', 'AbstractFloat',
+            'Nothing', 'Missing', 'Union', 'Tuple', 'NamedTuple', 'Dict',
+            'Function', 'Type', 'DataType', 'Symbol'
+        ],
+
+        constants: ['true', 'false', 'nothing', 'missing', 'Inf', 'NaN', 'pi', 'π', 'im', 'ℯ'],
 
         operators: [
             '=', '>', '<', '!', '~', '?', ':',
@@ -68,6 +81,13 @@ export function registerJuliaLanguage(monaco) {
 
                 // Function call: name( - but not after 'function' keyword
                 [/([a-zA-Z_]\w*!)(\()/, ['function.call', 'delimiter.parenthesis']],  // mutating functions like push!
+                // Type constructor call: UpperCase(...)
+                [/([A-Z][a-zA-Z0-9_]*)(\()/, {
+                    cases: {
+                        '$1@types': ['type', 'delimiter.parenthesis'],
+                        '@default': ['function.call', 'delimiter.parenthesis']
+                    }
+                }],
                 [/([a-zA-Z_]\w*)(\()/, {
                     cases: {
                         '$1@builtins': ['builtin.function', 'delimiter.parenthesis'],
@@ -75,12 +95,19 @@ export function registerJuliaLanguage(monaco) {
                     }
                 }],
 
+                // Type annotation: ::Type
+                [/(::)(\s*)([A-Z][a-zA-Z0-9_]*)/, ['operator', 'white', 'type']],
+
+                // Field access: obj.field
+                [/(\.)([a-zA-Z_]\w*)/, ['delimiter', 'variable.field']],
+
                 // Keywords (standalone, not followed by parenthesis)
                 [/\b(function)\b/, 'keyword'],
                 [/[a-zA-Z_]\w*/, {
                     cases: {
                         '@keywords': 'keyword',
                         '@constants': 'constant',
+                        '@types': 'type',
                         '@default': 'identifier'
                     }
                 }],
@@ -107,8 +134,15 @@ export function registerJuliaLanguage(monaco) {
                 // Strings
                 [/"([^"\\]|\\.)*$/, 'string.invalid'],  // non-terminated string
                 [/"/, 'string', '@string_double'],
-                [/'([^'\\]|\\.)*$/, 'string.invalid'],  // non-terminated char
-                [/'/, 'string', '@string_single'],
+
+                // Character literals - match complete patterns (before transpose operator)
+                [/'[^'\\]'/, 'string'],                  // single char: 'a'
+                [/'\\[abfnrtv\\"']'/, 'string'],         // simple escape: '\n'
+                [/'\\x[0-9a-fA-F]{2}'/, 'string'],       // hex escape: '\x41'
+                [/'\\u[0-9a-fA-F]{4}'/, 'string'],       // unicode escape: '\u0041'
+
+                // Transpose operator (single quote not part of char literal)
+                [/'/, 'operator'],
 
                 // Raw strings
                 [/raw"/, 'string', '@string_raw'],
@@ -133,13 +167,6 @@ export function registerJuliaLanguage(monaco) {
                 [/@escapes/, 'string.escape'],
                 [/\\./, 'string.escape.invalid'],
                 [/"/, 'string', '@pop']
-            ],
-
-            string_single: [
-                [/[^\\']+/, 'string'],
-                [/@escapes/, 'string.escape'],
-                [/\\./, 'string.escape.invalid'],
-                [/'/, 'string', '@pop']
             ],
 
             string_raw: [
@@ -171,6 +198,8 @@ export function registerJuliaLanguage(monaco) {
             { token: 'function.call', foreground: '66D9EF' },        // Blue/cyan for function calls
             { token: 'builtin.function', foreground: '66D9EF' },     // Blue/cyan for builtin functions
             { token: 'constant', foreground: 'AE81FF' },
+            { token: 'type', foreground: '66D9EF', fontStyle: 'italic' },  // Cyan/italic for types
+            { token: 'variable.field', foreground: 'F8F8F2' },       // White for field access
             { token: 'identifier', foreground: 'F8F8F2' },
             { token: 'number', foreground: 'AE81FF' },
             { token: 'number.float', foreground: 'AE81FF' },
