@@ -406,3 +406,28 @@ function hideError() {
 
 // Start the application
 init();
+
+// Debug functions exposed to window for console debugging
+window.debugParse = function(code) {
+    if (!parser) {
+        console.error('Parser not loaded');
+        return null;
+    }
+    const tree = parser.parse(code);
+    const cst = serializeNode(tree.rootNode, code);
+    console.log(JSON.stringify(cst, null, 2));
+    return cst;
+};
+
+window.debugRun = function(code) {
+    if (!parser || !wasm) {
+        console.error('Parser or WASM not loaded');
+        return null;
+    }
+    const tree = parser.parse(code);
+    const cstJson = serializeCst(tree.rootNode, code);
+    console.log('CST JSON:', cstJson);
+    const result = wasm.run_from_cst_json(cstJson, code, BigInt(42));
+    console.log('Result:', result);
+    return result;
+};
