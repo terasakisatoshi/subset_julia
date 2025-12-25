@@ -1,6 +1,6 @@
 // SubsetJuliaVM Playground - Main Application (Monaco Editor version)
 import { samplesIR } from './samples_ir.js?v=23';
-import { registerJuliaLanguage, setWasmModule } from './julia-language.js?v=3';
+import { registerJuliaLanguage, setWasmModule } from './julia-language.js?v=4';
 
 // Note: lowering.js is no longer needed - we use Rust-based lowering via run_from_cst_json
 
@@ -100,6 +100,18 @@ async function loadMonaco() {
                     useShadows: false,
                     verticalScrollbarSize: 10,
                     horizontalScrollbarSize: 10
+                },
+                // Enable code completion
+                quickSuggestions: true,
+                suggestOnTriggerCharacters: true,
+                acceptSuggestionOnEnter: 'on',
+                wordBasedSuggestions: 'off',
+                suggest: {
+                    snippetsPreventQuickSuggestions: false,
+                    showKeywords: true,
+                    showFunctions: true,
+                    showVariables: true,
+                    showConstants: true
                 }
             });
 

@@ -4,11 +4,151 @@
 // Store wasm module reference for completion provider
 let wasmModule = null;
 
+// Built-in functions for code completion (matching iOS app)
+const builtinFunctions = [
+    // Output
+    "println", "print", "display", "show", "repr",
+    // Math - Basic
+    "abs", "abs2", "sign", "sqrt", "cbrt",
+    "exp", "exp2", "exp10", "expm1",
+    "log", "log2", "log10", "log1p",
+    "sin", "cos", "tan", "asin", "acos", "atan", "atan2",
+    "sinh", "cosh", "tanh", "asinh", "acosh", "atanh",
+    "floor", "ceil", "round", "trunc",
+    "min", "max", "clamp", "minmax",
+    "mod", "rem", "div", "fld", "cld",
+    "gcd", "lcm", "factorial",
+    // Math - Advanced
+    "hypot", "sincos", "sinpi", "cospi",
+    "deg2rad", "rad2deg",
+    // Complex
+    "complex", "real", "imag", "conj", "angle",
+    // Array Creation
+    "zeros", "ones", "fill", "rand", "randn",
+    "range", "collect", "repeat",
+    "trues", "falses",
+    // Array Operations
+    "length", "size", "ndims", "eltype",
+    "push!", "pop!", "append!", "prepend!",
+    "insert!", "deleteat!", "empty!",
+    "first", "last", "reverse", "sort", "sort!",
+    "unique", "union", "intersect", "setdiff",
+    // Higher-order Functions
+    "map", "filter", "reduce", "foldl", "foldr",
+    "foreach", "any", "all", "count",
+    "findall", "findfirst", "findlast",
+    "sum", "prod", "cumsum", "cumprod",
+    "maximum", "minimum", "extrema",
+    "argmax", "argmin",
+    // Type Functions
+    "typeof", "isa", "convert",
+    "Int64", "Float64", "String", "Bool",
+    // String Functions
+    "string", "join", "split", "strip",
+    "uppercase", "lowercase", "titlecase",
+    "startswith", "endswith", "contains",
+    "replace", "match", "occursin",
+    "parse", "tryparse",
+    // Utility
+    "sleep", "time", "error", "throw",
+    "isnothing", "something",
+    "iszero", "isone", "isnan", "isinf", "isfinite",
+    "iseven", "isodd", "ispow2",
+    // Iteration
+    "enumerate", "zip", "eachindex", "keys", "values",
+];
+
+// Keywords for code completion
+const completionKeywords = [
+    // Control Flow
+    "if", "elseif", "else", "end",
+    "for", "while", "break", "continue",
+    "return", "do",
+    // Functions & Types
+    "function", "struct", "mutable",
+    "abstract", "primitive",
+    // Scope & Modules
+    "begin", "let", "local", "global", "const",
+    "module", "import", "using", "export",
+    // Error Handling
+    "try", "catch", "finally", "throw",
+    // Boolean
+    "true", "false", "nothing",
+    // Operators
+    "in", "isa",
+];
+
+// Constants for code completion
+const completionConstants = [
+    "π", "pi", "ℯ", "Inf", "NaN", "im",
+];
+
+// Macros for code completion
+const completionMacros = [
+    "@time", "@show", "@assert",
+];
+
+// Extract variable names from Julia code
+function extractVariables(code) {
+    const variables = new Set();
+
+    // Pattern for variable assignments: name = value
+    const assignmentRegex = /(?<![.\w])([a-zA-Z_][a-zA-Z0-9_]*)\s*=/g;
+    let match;
+    while ((match = assignmentRegex.exec(code)) !== null) {
+        const varName = match[1];
+        // Filter out keywords and built-in names
+        if (!completionKeywords.includes(varName) && !builtinFunctions.includes(varName)) {
+            variables.add(varName);
+        }
+    }
+
+    // Pattern for function parameters: function foo(x, y, z)
+    const funcRegex = /function\s+\w+\s*\(([^)]*)\)/g;
+    while ((match = funcRegex.exec(code)) !== null) {
+        const params = match[1];
+        for (const param of params.split(',')) {
+            // Handle typed parameters like x::Int
+            const name = param.split(':')[0].trim();
+            if (name && /^[a-zA-Z_]/.test(name)) {
+                variables.add(name);
+            }
+        }
+    }
+
+    // Pattern for for loop variables: for i in ...
+    const forRegex = /for\s+([a-zA-Z_][a-zA-Z0-9_]*)\s+in/g;
+    while ((match = forRegex.exec(code)) !== null) {
+        variables.add(match[1]);
+    }
+
+    // Pattern for lambda parameters: (x, y) -> ... or x -> ...
+    const lambdaRegex = /\(([^)]+)\)\s*->|([a-zA-Z_][a-zA-Z0-9_]*)\s*->/g;
+    while ((match = lambdaRegex.exec(code)) !== null) {
+        if (match[1]) {
+            // Multiple params: (x, y) -> ...
+            for (const param of match[1].split(',')) {
+                const name = param.split(':')[0].trim();
+                if (name && /^[a-zA-Z_]/.test(name)) {
+                    variables.add(name);
+                }
+            }
+        } else if (match[2]) {
+            // Single param: x -> ...
+            variables.add(match[2]);
+        }
+    }
+
+    return variables;
+}
+
 export function setWasmModule(wasm) {
     wasmModule = wasm;
 }
 
 export function registerJuliaLanguage(monaco) {
+    console.log('[Julia] registerJuliaLanguage called');
+
     // Register Julia language
     monaco.languages.register({ id: 'julia' });
 
@@ -315,4 +455,129 @@ export function registerJuliaLanguage(monaco) {
             return { suggestions };
         }
     });
+
+    // Register code completion provider for functions, keywords, variables, constants
+    monaco.languages.registerCompletionItemProvider('julia', {
+        // Trigger on @ for macros (quickSuggestions handles normal typing)
+        triggerCharacters: ['@'],
+        provideCompletionItems: (model, position) => {
+            console.log('[Julia Completion] provideCompletionItems called');
+
+            // Get text before cursor on current line
+            const lineContent = model.getLineContent(position.lineNumber);
+            const textBeforeCursor = lineContent.substring(0, position.column - 1);
+
+            console.log('[Julia Completion] textBeforeCursor:', textBeforeCursor);
+
+            // Find the current word being typed
+            const wordMatch = textBeforeCursor.match(/(@?[a-zA-Z_][a-zA-Z0-9_!?]*)$/);
+            if (!wordMatch) {
+                console.log('[Julia Completion] no word match');
+                return { suggestions: [] };
+            }
+
+            const prefix = wordMatch[1];
+            const prefixLower = prefix.toLowerCase();
+
+            console.log('[Julia Completion] prefix:', prefix);
+
+            // Don't show completions for very short prefixes (except for @ macros)
+            if (prefix.length < 2 && !prefix.startsWith('@')) {
+                console.log('[Julia Completion] prefix too short');
+                return { suggestions: [] };
+            }
+
+            // Calculate the range to replace
+            const range = {
+                startLineNumber: position.lineNumber,
+                startColumn: position.column - prefix.length,
+                endLineNumber: position.lineNumber,
+                endColumn: position.column
+            };
+
+            const suggestions = [];
+            let sortIndex = 0;
+
+            // Add matching keywords (high priority)
+            for (const keyword of completionKeywords) {
+                if (keyword.toLowerCase().startsWith(prefixLower)) {
+                    suggestions.push({
+                        label: keyword,
+                        kind: monaco.languages.CompletionItemKind.Keyword,
+                        insertText: keyword,
+                        range: range,
+                        detail: 'keyword',
+                        sortText: `0${String(sortIndex++).padStart(3, '0')}` // Keywords first
+                    });
+                }
+            }
+
+            // Add matching built-in functions
+            for (const func of builtinFunctions) {
+                if (func.toLowerCase().startsWith(prefixLower)) {
+                    suggestions.push({
+                        label: func,
+                        kind: monaco.languages.CompletionItemKind.Function,
+                        insertText: func,
+                        range: range,
+                        detail: 'builtin',
+                        sortText: `1${String(sortIndex++).padStart(3, '0')}` // Functions second
+                    });
+                }
+            }
+
+            // Add matching constants
+            for (const constant of completionConstants) {
+                if (constant.toLowerCase().startsWith(prefixLower)) {
+                    suggestions.push({
+                        label: constant,
+                        kind: monaco.languages.CompletionItemKind.Constant,
+                        insertText: constant,
+                        range: range,
+                        detail: 'constant',
+                        sortText: `2${String(sortIndex++).padStart(3, '0')}` // Constants third
+                    });
+                }
+            }
+
+            // Add matching macros (for @ prefix)
+            if (prefix.startsWith('@')) {
+                for (const macro of completionMacros) {
+                    if (macro.toLowerCase().startsWith(prefixLower)) {
+                        suggestions.push({
+                            label: macro,
+                            kind: monaco.languages.CompletionItemKind.Snippet,
+                            insertText: macro,
+                            range: range,
+                            detail: 'macro',
+                            sortText: `0${String(sortIndex++).padStart(3, '0')}` // Macros high priority
+                        });
+                    }
+                }
+            }
+
+            // Extract and add variables from the current code
+            const fullCode = model.getValue();
+            const variables = extractVariables(fullCode);
+            for (const variable of variables) {
+                if (variable.toLowerCase().startsWith(prefixLower) && variable !== prefix) {
+                    suggestions.push({
+                        label: variable,
+                        kind: monaco.languages.CompletionItemKind.Variable,
+                        insertText: variable,
+                        range: range,
+                        detail: 'local',
+                        sortText: `3${String(sortIndex++).padStart(3, '0')}` // Variables last
+                    });
+                }
+            }
+
+            // Limit results to prevent overwhelming the user
+            const result = suggestions.slice(0, 15);
+            console.log('[Julia Completion] returning', result.length, 'suggestions');
+            return { suggestions: result };
+        }
+    });
+
+    console.log('[Julia] Code completion provider registered');
 }
