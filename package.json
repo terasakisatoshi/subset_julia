@@ -1,14 +1,17 @@
 {
-  "name": "subset-vm-web",
+  "name": "subset_julia_vm_web",
+  "type": "module",
+  "description": "WebAssembly binding for SubsetJuliaVM - Julia subset interpreter",
   "version": "0.1.0",
-  "description": "SubsetJuliaVM Web Playground",
-  "private": true,
-  "scripts": {
-    "serve": "python3 -m http.server 8080",
-    "test": "node test-runner.js",
-    "test:headed": "PLAYWRIGHT_HEADLESS=false node test-runner.js"
-  },
-  "devDependencies": {
-    "playwright": "^1.40.0"
-  }
+  "license": "MIT",
+  "files": [
+    "subset_julia_vm_web_bg.wasm",
+    "subset_julia_vm_web.js",
+    "subset_julia_vm_web.d.ts"
+  ],
+  "main": "subset_julia_vm_web.js",
+  "types": "subset_julia_vm_web.d.ts",
+  "sideEffects": [
+    "./snippets/*"
+  ]
 }
