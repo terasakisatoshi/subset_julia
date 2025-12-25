@@ -179,6 +179,170 @@ println("Hypotenuse: ", hypotenuse(3.0, 4.0))
 println("Sum: ", debug_sum(5))`
     },
 
+    // ==================== STRINGS ====================
+    {
+        name: "Char Basics",
+        category: "Strings",
+        code: `# Char Basics
+# Working with individual characters in Julia
+
+# Char literals use single quotes
+c = 'A'
+println("Char: ", c)
+println("Type: ", typeof(c))
+
+# Convert between Char and Int (Unicode code point)
+println("\\nCode point of 'A': ", Int(c))
+println("Code point of 'a': ", Int('a'))
+println("Code point of '0': ", Int('0'))
+
+# Convert Int to Char
+println("\\nChar(65) = ", Char(65))   # 'A'
+println("Char(97) = ", Char(97))   # 'a'
+println("Char(48) = ", Char(48))   # '0'
+
+# Get characters from string indexing
+s = "Hello"
+println("\\nString: ", s)
+println("s[1] = ", s[1], " (", typeof(s[1]), ")")
+println("s[2] = ", s[2])
+println("s[5] = ", s[5])
+
+# Unicode characters
+println("\\nUnicode chars:")
+println("Char(12354) = ", Char(12354))  # Japanese 'あ'
+println("Char(960) = ", Char(960))      # Greek 'π'`
+    },
+    {
+        name: "String Basics",
+        category: "Strings",
+        code: `# String Basics
+# Basic string operations in Julia
+
+# String length (character count)
+s = "Hello, World!"
+println("String: ", s)
+println("Length: ", length(s))
+
+# String indexing (1-based, returns Char)
+println("First char: ", s[1])
+println("Last char: ", s[length(s)])
+
+# Byte count vs character count
+println("Bytes: ", ncodeunits(s))
+
+# String repetition
+println("Repeat: ", repeat("Hi! ", 3))
+
+# String trimming
+padded = "  hello  "
+println("Original: '", padded, "'")
+println("Stripped: '", strip(padded), "'")
+println("Left strip: '", lstrip(padded), "'")
+println("Right strip: '", rstrip(padded), "'")
+
+# chomp and chop
+with_newline = "hello\\n"
+println("Chomped: '", chomp(with_newline), "'")
+println("Chopped: '", chop("hello"), "'")`
+    },
+    {
+        name: "String Case",
+        category: "Strings",
+        code: `# String Case Conversion
+# Convert strings between uppercase, lowercase, and titlecase
+
+# Original string
+s = "Hello World"
+println("Original: ", s)
+
+# Case conversions
+println("Uppercase: ", uppercase(s))
+println("Lowercase: ", lowercase(s))
+println("Titlecase: ", titlecase(s))
+
+# Mixed case example
+mixed = "jULIA pROGRAMMING"
+println("\\nMixed: ", mixed)
+println("Uppercase: ", uppercase(mixed))
+println("Lowercase: ", lowercase(mixed))
+println("Titlecase: ", titlecase(mixed))
+
+# Works with Unicode too!
+greeting = "hello"
+println("\\nEnglish: ", uppercase(greeting))`
+    },
+    {
+        name: "String Search",
+        category: "Strings",
+        code: `# String Search Functions
+# Find substrings and check string patterns
+
+s = "Hello, Julia World!"
+
+# Check string start/end
+println("String: ", s)
+println("Starts with 'Hello': ", startswith(s, "Hello"))
+println("Starts with 'World': ", startswith(s, "World"))
+println("Ends with 'World!': ", endswith(s, "World!"))
+println("Ends with 'Hello': ", endswith(s, "Hello"))
+
+# Check if substring exists
+println("\\nContains 'Julia': ", occursin("Julia", s))
+println("Contains 'Python': ", occursin("Python", s))
+
+# Find first/last occurrence (returns index or nothing)
+text = "abracadabra"
+println("\\nText: ", text)
+println("First 'a' at index: ", findfirst("a", text))
+println("Last 'a' at index: ", findlast("a", text))
+println("First 'bra' at index: ", findfirst("bra", text))
+
+# Split string
+sentence = "one,two,three,four"
+println("\\nSplit by comma:")
+parts = split(sentence, ",")
+println("  Parts count: ", length(parts))
+
+# Join array of strings
+arr = ("Julia", "is", "fast")
+println("\\nJoin tuple: ", join(arr, " "))`
+    },
+    {
+        name: "Multi-byte Strings",
+        category: "Strings",
+        code: `# Multi-byte String Handling
+# Julia uses UTF-8 encoding with byte-based indexing
+
+# Japanese hiragana (3 bytes per character)
+jp = "あいう"
+println("Japanese: ", jp)
+println("Character count: ", length(jp))
+println("Byte count: ", ncodeunits(jp))
+
+# Byte-based indexing (Julia-style)
+println("\\njp[1] = ", jp[1])   # 'あ' (bytes 1-3)
+println("jp[4] = ", jp[4])   # 'い' (bytes 4-6)
+println("jp[7] = ", jp[7])   # 'う' (bytes 7-9)
+
+# Mixed ASCII and multi-byte
+mixed = "Hello世界"
+println("\\nMixed: ", mixed)
+println("Length: ", length(mixed))
+println("Bytes: ", ncodeunits(mixed))
+println("mixed[1] = ", mixed[1])   # 'H'
+println("mixed[6] = ", mixed[6])   # '世' (byte 6)
+
+# Case conversion works with Unicode
+text = "HELLO"
+println("\\nUppercase: ", text)
+println("Lowercase: ", lowercase(text))
+
+# Note: Accessing invalid byte positions (e.g., jp[2])
+# will raise StringIndexError because byte 2 is in
+# the middle of the multi-byte character 'あ'`
+    },
+
     // ==================== INTERMEDIATE ====================
     {
         name: "FizzBuzz",

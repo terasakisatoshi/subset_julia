@@ -136,10 +136,118 @@
             background: #66d9ef;
             transition: width 0.3s;
         }
+
+        /* Debug Parse Section */
+        .debug-section {
+            margin-bottom: 2rem;
+            padding: 1rem;
+            background: #272822;
+            border-radius: 8px;
+        }
+
+        .debug-section h2 {
+            margin-bottom: 1rem;
+            font-size: 1.2rem;
+        }
+
+        .debug-input {
+            width: 100%;
+            min-height: 100px;
+            padding: 0.75rem;
+            background: #1e1f1c;
+            border: 1px solid #3e3d32;
+            border-radius: 4px;
+            color: #f8f8f2;
+            font-family: 'Fira Code', monospace;
+            font-size: 14px;
+            resize: vertical;
+            margin-bottom: 0.5rem;
+        }
+
+        .debug-input:focus {
+            outline: none;
+            border-color: #66d9ef;
+        }
+
+        .debug-output {
+            max-height: 400px;
+            overflow: auto;
+            padding: 0.75rem;
+            background: #1e1f1c;
+            border-radius: 4px;
+            font-family: monospace;
+            font-size: 12px;
+            white-space: pre;
+            margin-top: 0.5rem;
+        }
+
+        .debug-output.error {
+            color: #f92672;
+        }
+
+        .debug-output .key {
+            color: #66d9ef;
+        }
+
+        .debug-output .string {
+            color: #e6db74;
+        }
+
+        .debug-output .number {
+            color: #ae81ff;
+        }
+
+        .debug-output .boolean {
+            color: #f92672;
+        }
+
+        .debug-tabs {
+            display: flex;
+            gap: 0.5rem;
+            margin-bottom: 0.5rem;
+        }
+
+        .debug-tab {
+            padding: 0.25rem 0.75rem;
+            background: #3e3d32;
+            border: none;
+            border-radius: 4px;
+            color: #f8f8f2;
+            cursor: pointer;
+            font-size: 0.875rem;
+        }
+
+        .debug-tab.active {
+            background: #66d9ef;
+            color: #1e1f1c;
+        }
+
+        .debug-tab:hover:not(.active) {
+            background: #4e4d42;
+        }
     </style>
 </head>
 <body>
     <h1>SubsetJuliaVM Web Test Runner</h1>
+
+    <!-- Debug Parse Section -->
+    <div class="debug-section">
+        <h2>Debug Parse</h2>
+        <textarea id="debug-input" class="debug-input" placeholder="Enter Julia code to parse...">1 + 2 * 3</textarea>
+        <div class="controls">
+            <button id="debug-parse-btn" class="primary">Parse</button>
+            <div class="debug-tabs">
+                <button class="debug-tab active" data-view="tree">Tree</button>
+                <button class="debug-tab" data-view="json">JSON</button>
+                <button class="debug-tab" data-view="sexp">S-expr</button>
+            </div>
+        </div>
+        <div id="debug-output" class="debug-output"></div>
+    </div>
+
+    <hr style="border-color: #3e3d32; margin: 2rem 0;">
+
+    <h2>Test Runner</h2>
 
     <div class="controls">
         <button id="run-all" class="primary">Run All Tests</button>
@@ -351,8 +459,136 @@
         document.getElementById('run-all').addEventListener('click', () => runAllTests(false));
         document.getElementById('run-failed').addEventListener('click', () => runAllTests(true));
 
+        // Debug Parse functionality
+        let currentView = 'tree';
+        let lastParsedCst = null;
+
+        function setupDebugParse() {
+            const debugInput = document.getElementById('debug-input');
+            const debugOutput = document.getElementById('debug-output');
+            const parseBtn = document.getElementById('debug-parse-btn');
+            const tabs = document.querySelectorAll('.debug-tab');
+
+            parseBtn.addEventListener('click', () => {
+                debugParse(debugInput.value);
+            });
+
+            // Ctrl/Cmd+Enter to parse
+            debugInput.addEventListener('keydown', (e) => {
+                if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+                    e.preventDefault();
+                    debugParse(debugInput.value);
+                }
+            });
+
+            // Tab switching
+            tabs.forEach(tab => {
+                tab.addEventListener('click', () => {
+                    tabs.forEach(t => t.classList.remove('active'));
+                    tab.classList.add('active');
+                    currentView = tab.dataset.view;
+                    if (lastParsedCst) {
+                        renderCst(lastParsedCst, debugInput.value);
+                    }
+                });
+            });
+        }
+
+        function debugParse(code) {
+            const debugOutput = document.getElementById('debug-output');
+
+            if (!parser) {
+                debugOutput.className = 'debug-output error';
+                debugOutput.textContent = 'Parser not loaded yet. Please wait...';
+                return;
+            }
+
+            try {
+                const tree = parser.parse(code);
+                lastParsedCst = tree.rootNode;
+                renderCst(tree.rootNode, code);
+            } catch (e) {
+                debugOutput.className = 'debug-output error';
+                debugOutput.textContent = 'Parse error: ' + e.message;
+            }
+        }
+
+        function renderCst(rootNode, source) {
+            const debugOutput = document.getElementById('debug-output');
+            debugOutput.className = 'debug-output';
+
+            switch (currentView) {
+                case 'tree':
+                    debugOutput.innerHTML = renderTree(rootNode, source, 0);
+                    break;
+                case 'json':
+                    const cst = serializeNode(rootNode, source);
+                    debugOutput.innerHTML = syntaxHighlightJson(JSON.stringify(cst, null, 2));
+                    break;
+                case 'sexp':
+                    debugOutput.textContent = rootNode.toString();
+                    break;
+            }
+        }
+
+        function renderTree(node, source, depth) {
+            const indent = '  '.repeat(depth);
+            const text = source.substring(node.startIndex, node.endIndex);
+            const shortText = text.length > 40 ? text.substring(0, 40) + '...' : text;
+            const escapedText = shortText.replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\n/g, '\\n');
+
+            let html = `${indent}<span class="key">${node.type}</span>`;
+            if (node.childCount === 0) {
+                html += ` <span class="string">"${escapedText}"</span>`;
+            }
+            html += ` <span class="number">[${node.startIndex}:${node.endIndex}]</span>`;
+            if (node.hasError) {
+                html += ` <span class="boolean">ERROR</span>`;
+            }
+            html += '\n';
+
+            for (let i = 0; i < node.childCount; i++) {
+                const child = node.child(i);
+                if (child) {
+                    html += renderTree(child, source, depth + 1);
+                }
+            }
+
+            return html;
+        }
+
+        function syntaxHighlightJson(json) {
+            return json
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d*)?(?:[eE][+\-]?\d+)?)/g, function (match) {
+                    let cls = 'number';
+                    if (/^"/.test(match)) {
+                        if (/:$/.test(match)) {
+                            cls = 'key';
+                            match = match.slice(0, -1); // Remove trailing colon for styling
+                            return '<span class="' + cls + '">' + match + '</span>:';
+                        } else {
+                            cls = 'string';
+                        }
+                    } else if (/true|false/.test(match)) {
+                        cls = 'boolean';
+                    } else if (/null/.test(match)) {
+                        cls = 'boolean';
+                    }
+                    return '<span class="' + cls + '">' + match + '</span>';
+                });
+        }
+
         // Start
-        init();
+        init().then(() => {
+            setupDebugParse();
+            // Parse initial code after parser is loaded
+            setTimeout(() => {
+                debugParse(document.getElementById('debug-input').value);
+            }, 100);
+        });
     </script>
 </body>
 </html>
