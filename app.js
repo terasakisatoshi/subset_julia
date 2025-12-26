@@ -29,10 +29,52 @@ const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
 const runShortcut = isMac ? '⌘+Enter' : 'Ctrl+Enter';
 const runButtonText = `Run (${runShortcut})`;
 
+// Initialize Split.js for resizable panels
+function initSplit() {
+    const isNarrow = window.innerWidth <= 900;
+    const direction = isNarrow ? 'vertical' : 'horizontal';
+
+    // Destroy existing split if any
+    if (window.splitInstance) {
+        window.splitInstance.destroy();
+    }
+
+    const minSize = isNarrow ? [100, 100] : [200, 150];
+
+    window.splitInstance = Split(['.editor-container', '.output-container'], {
+        sizes: [50, 50],
+        minSize: minSize,
+        gutterSize: 8,
+        direction: direction,
+        cursor: direction === 'horizontal' ? 'col-resize' : 'row-resize',
+        onDragEnd: function() {
+            // Trigger Monaco editor resize
+            if (editor) {
+                editor.layout();
+            }
+        }
+    });
+}
+
 // Initialize the application
 async function init() {
     // Set button text with platform-appropriate shortcut
     runBtn.textContent = runButtonText;
+
+    // Initialize Split.js
+    initSplit();
+
+    // Re-initialize on window resize to switch direction
+    let resizeTimer;
+    window.addEventListener('resize', () => {
+        clearTimeout(resizeTimer);
+        resizeTimer = setTimeout(() => {
+            initSplit();
+            if (editor) {
+                editor.layout();
+            }
+        }, 100);
+    });
 
     // Populate sample selector
     populateSamples();
