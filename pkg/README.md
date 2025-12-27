@@ -50,6 +50,17 @@ rustup target add wasm32-unknown-unknown
 cargo install wasm-pack
 ```
 
+### Base ライブラリの再生成（Pure Julia 関数追加時）
+
+`subset_julia_vm/src/julia/base/` に Pure Julia で新しい関数を追加した場合、precompiled base.json を再生成する必要があります：
+
+```bash
+cd subset_julia_vm
+cargo run --bin precompile_stdlib --features parser
+```
+
+これにより `src/precompiled/base.json` が更新されます。この手順を忘れると、新しい関数が WASM で "Unknown function" エラーになります。
+
 ### WASM ビルド
 
 ```bash
