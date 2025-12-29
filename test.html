@@ -237,9 +237,9 @@
         <div class="controls">
             <button id="debug-parse-btn" class="primary">Parse</button>
             <div class="debug-tabs">
-                <button class="debug-tab active" data-view="tree">Tree</button>
-                <button class="debug-tab" data-view="json">JSON</button>
-                <button class="debug-tab" data-view="sexp">S-expr</button>
+                <button class="debug-tab active" data-view="tree" data-copy="tree" title="Click to copy Tree view">Tree</button>
+                <button class="debug-tab" data-view="json" data-copy="json" title="Click to copy JSON">JSON</button>
+                <button class="debug-tab" data-view="sexp" data-copy="sexp" title="Click to copy S-expr">S-expr</button>
             </div>
         </div>
         <div id="debug-output" class="debug-output"></div>
@@ -481,14 +481,17 @@
                 }
             });
 
-            // Tab switching
+            // Tab switching and copy functionality
             tabs.forEach(tab => {
-                tab.addEventListener('click', () => {
+                tab.addEventListener('click', async () => {
                     tabs.forEach(t => t.classList.remove('active'));
                     tab.classList.add('active');
                     currentView = tab.dataset.view;
                     if (lastParsedCst) {
                         renderCst(lastParsedCst, debugInput.value);
+                        // Copy content to clipboard
+                        const textToCopy = getCopyText(tab.dataset.copy, lastParsedCst, debugInput.value);
+                        await copyToClipboard(textToCopy, tab);
                     }
                 });
             });
@@ -579,6 +582,67 @@
                     }
                     return '<span class="' + cls + '">' + match + '</span>';
                 });
+        }
+
+        function getCopyText(copyType, rootNode, source) {
+            switch (copyType) {
+                case 'tree':
+                    return renderTreePlainText(rootNode, source, 0);
+                case 'json':
+                    const cst = serializeNode(rootNode, source);
+                    return JSON.stringify(cst, null, 2);
+                case 'sexp':
+                    return rootNode.toString();
+                default:
+                    return '';
+            }
+        }
+
+        function renderTreePlainText(node, source, depth) {
+            const indent = '  '.repeat(depth);
+            const text = source.substring(node.startIndex, node.endIndex);
+            const shortText = text.length > 40 ? text.substring(0, 40) + '...' : text;
+            const escapedText = shortText.replace(/\n/g, '\\n');
+
+            let output = `${indent}${node.type}`;
+            if (node.childCount === 0) {
+                output += ` "${escapedText}"`;
+            }
+            output += ` [${node.startIndex}:${node.endIndex}]`;
+            if (node.hasError) {
+                output += ` ERROR`;
+            }
+            output += '\n';
+
+            for (let i = 0; i < node.childCount; i++) {
+                const child = node.child(i);
+                if (child) {
+                    output += renderTreePlainText(child, source, depth + 1);
+                }
+            }
+
+            return output;
+        }
+
+        async function copyToClipboard(text, buttonEl) {
+            try {
+                await navigator.clipboard.writeText(text);
+                const originalText = buttonEl.textContent;
+                buttonEl.textContent = 'Copied!';
+                buttonEl.style.background = '#a6e22e';
+                buttonEl.style.color = '#1e1f1c';
+                setTimeout(() => {
+                    buttonEl.textContent = originalText;
+                    if (buttonEl.classList.contains('active')) {
+                        buttonEl.style.background = '#66d9ef';
+                    } else {
+                        buttonEl.style.background = '#3e3d32';
+                        buttonEl.style.color = '#f8f8f2';
+                    }
+                }, 1000);
+            } catch (err) {
+                console.error('Failed to copy:', err);
+            }
         }
 
         // Start

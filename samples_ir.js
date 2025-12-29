@@ -1056,14 +1056,7 @@ println(result)`,
   },
   {
     name: "Dice Simulation",
-    code: `function floor(x)
-    result = 0
-    while result + 1 <= x
-        result += 1
-    end
-    result
-end
-
+    code: `
 function simulate_dice(n_rolls)
     rolls = rand(n_rolls)
     sum = 0

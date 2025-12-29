@@ -169,21 +169,27 @@ async function loadMonaco() {
 
 async function loadParser() {
     try {
-        // Dynamically import TreeSitter (v0.25.x uses named exports)
+        // Load TreeSitter via ESM dynamic import (0.25.x is an ESM module)
         console.log('Loading TreeSitter module...');
-        const { Parser: TSParser, Language } = await import('https://cdn.jsdelivr.net/npm/web-tree-sitter@0.25.3/tree-sitter.js');
-        TreeSitter = { Parser: TSParser, Language };
+        const module = await import('https://cdn.jsdelivr.net/npm/web-tree-sitter@0.25.0/+esm');
+
+        // web-tree-sitter 0.25.x exports Parser and Language as separate classes
+        const Parser = module.Parser;
+        const Language = module.Language;
         console.log('TreeSitter module loaded');
 
         console.log('Initializing Parser...');
-        await TSParser.init();
+        await Parser.init();
         console.log('Parser initialized');
 
-        parser = new TSParser();
+        parser = new Parser();
         console.log('Loading Julia language WASM...');
         const Julia = await Language.load('./tree-sitter-julia.wasm');
         parser.setLanguage(Julia);
         console.log('Parser loaded successfully');
+
+        // Keep TreeSitter reference for compatibility
+        TreeSitter = Parser;
     } catch (e) {
         console.error('Parser loading failed:', e);
     }
