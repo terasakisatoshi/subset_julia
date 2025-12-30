@@ -88,18 +88,34 @@ const completionMacros = [
     "@time", "@show", "@assert",
 ];
 
-// Extract variable names from Julia code
+// Extract variable names from Julia code with usage counts
 function extractVariables(code) {
-    const variables = new Set();
+    const variables = new Map(); // name -> count
+
+    const incrementVariable = (varName) => {
+        // Filter out keywords and built-in names
+        if (completionKeywords.includes(varName) || builtinFunctions.includes(varName)) {
+            return;
+        }
+        variables.set(varName, (variables.get(varName) || 0) + 1);
+    };
 
     // Pattern for variable assignments: name = value
     const assignmentRegex = /(?<![.\w])([a-zA-Z_][a-zA-Z0-9_]*)\s*=/g;
     let match;
     while ((match = assignmentRegex.exec(code)) !== null) {
-        const varName = match[1];
-        // Filter out keywords and built-in names
-        if (!completionKeywords.includes(varName) && !builtinFunctions.includes(varName)) {
-            variables.add(varName);
+        incrementVariable(match[1]);
+    }
+
+    // Pattern for multiple assignment: x, y, z = values
+    const multiAssignRegex = /\(?\s*([a-zA-Z_][a-zA-Z0-9_]*(?:\s*,\s*[a-zA-Z_][a-zA-Z0-9_]*)+)\s*\)?\s*=/g;
+    while ((match = multiAssignRegex.exec(code)) !== null) {
+        const vars = match[1].split(',');
+        for (const v of vars) {
+            const name = v.trim().split(':')[0].trim();
+            if (name && /^[a-zA-Z_]/.test(name)) {
+                incrementVariable(name);
+            }
         }
     }
 
@@ -111,15 +127,33 @@ function extractVariables(code) {
             // Handle typed parameters like x::Int
             const name = param.split(':')[0].trim();
             if (name && /^[a-zA-Z_]/.test(name)) {
-                variables.add(name);
+                incrementVariable(name);
             }
         }
     }
 
-    // Pattern for for loop variables: for i in ...
-    const forRegex = /for\s+([a-zA-Z_][a-zA-Z0-9_]*)\s+in/g;
+    // Pattern for for loop variables: for i in ... or for (i, j) in ...
+    const forRegex = /for\s+\(?\s*([a-zA-Z_][a-zA-Z0-9_,\s]*)\s*\)?\s+in/g;
     while ((match = forRegex.exec(code)) !== null) {
-        variables.add(match[1]);
+        const vars = match[1].split(',');
+        for (const v of vars) {
+            const name = v.trim();
+            if (name && /^[a-zA-Z_]/.test(name)) {
+                incrementVariable(name);
+            }
+        }
+    }
+
+    // Pattern for list comprehension: [expr for x in items] or [expr for x in items, y in others]
+    const comprehensionRegex = /\[\s*[^\]]+\s+for\s+([a-zA-Z_][a-zA-Z0-9_]*(?:\s*,\s*[a-zA-Z_][a-zA-Z0-9_]*)*)\s+in/g;
+    while ((match = comprehensionRegex.exec(code)) !== null) {
+        const vars = match[1].split(',');
+        for (const v of vars) {
+            const name = v.trim();
+            if (name && /^[a-zA-Z_]/.test(name)) {
+                incrementVariable(name);
+            }
+        }
     }
 
     // Pattern for lambda parameters: (x, y) -> ... or x -> ...
@@ -130,12 +164,39 @@ function extractVariables(code) {
             for (const param of match[1].split(',')) {
                 const name = param.split(':')[0].trim();
                 if (name && /^[a-zA-Z_]/.test(name)) {
-                    variables.add(name);
+                    incrementVariable(name);
                 }
             }
         } else if (match[2]) {
             // Single param: x -> ...
-            variables.add(match[2]);
+            incrementVariable(match[2]);
+        }
+    }
+
+    // Pattern for let blocks: let x = 1, y = 2
+    const letRegex = /let\s+([a-zA-Z_][a-zA-Z0-9_]*\s*=\s*[^,\n]+(?:\s*,\s*[a-zA-Z_][a-zA-Z0-9_]*\s*=\s*[^,\n]+)*)/g;
+    while ((match = letRegex.exec(code)) !== null) {
+        const assignments = match[1].split(',');
+        for (const assignment of assignments) {
+            const nameMatch = assignment.match(/([a-zA-Z_][a-zA-Z0-9_]*)\s*=/);
+            if (nameMatch) {
+                incrementVariable(nameMatch[1]);
+            }
+        }
+    }
+
+    // Pattern for catch blocks: catch e or catch ex
+    const catchRegex = /catch\s+([a-zA-Z_][a-zA-Z0-9_]*)/g;
+    while ((match = catchRegex.exec(code)) !== null) {
+        incrementVariable(match[1]);
+    }
+
+    // Count variable usage (not just declaration)
+    const usageRegex = /\b([a-zA-Z_][a-zA-Z0-9_]*)\b/g;
+    while ((match = usageRegex.exec(code)) !== null) {
+        const name = match[1];
+        if (variables.has(name)) {
+            variables.set(name, variables.get(name) + 1);
         }
     }
 
@@ -558,22 +619,27 @@ export function registerJuliaLanguage(monaco) {
 
             // Extract and add variables from the current code
             const fullCode = model.getValue();
-            const variables = extractVariables(fullCode);
-            for (const variable of variables) {
+            const variables = extractVariables(fullCode); // Now returns Map<name, count>
+
+            // Convert to array and sort by usage count (descending)
+            const sortedVariables = Array.from(variables.entries())
+                .sort((a, b) => b[1] - a[1]); // Sort by count, most used first
+
+            for (const [variable, count] of sortedVariables) {
                 if (variable.toLowerCase().startsWith(prefixLower) && variable !== prefix) {
                     suggestions.push({
                         label: variable,
                         kind: monaco.languages.CompletionItemKind.Variable,
                         insertText: variable,
                         range: range,
-                        detail: 'local',
-                        sortText: `3${String(sortIndex++).padStart(3, '0')}` // Variables last
+                        detail: `local (used ${count}x)`,
+                        sortText: `3${String(1000 - count).padStart(4, '0')}` // Higher usage = lower sort value
                     });
                 }
             }
 
-            // Limit results to prevent overwhelming the user
-            const result = suggestions.slice(0, 15);
+            // Limit results to prevent overwhelming the user (increased from 15 to 30)
+            const result = suggestions.slice(0, 30);
             console.log('[Julia Completion] returning', result.length, 'suggestions');
             return { suggestions: result };
         }

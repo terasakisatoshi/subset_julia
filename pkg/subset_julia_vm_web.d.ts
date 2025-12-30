@@ -19,20 +19,6 @@ export function get_version(): string;
 export function init(): void;
 
 /**
- * Run a Julia program by passing the CST (parsed by web-tree-sitter) and source code.
- * The CST is serialized as JSON from JavaScript, lowered to IR in Rust, then executed.
- *
- * # Arguments
- * * `cst_json` - JSON string representing the parsed CST from web-tree-sitter
- * * `source` - Original Julia source code (needed for text extraction)
- * * `seed` - Random seed for deterministic execution
- *
- * # Returns
- * An ExecutionResult object containing success status, value, output, and error message
- */
-export function run_from_cst_json(cst_json: string, source: string, seed: bigint): any;
-
-/**
  * Run Julia source code directly using the pure Rust parser.
  *
  * This is the recommended entry point for running Julia code in WASM.
@@ -100,7 +86,6 @@ export interface InitOutput {
   readonly get_unsupported_features: () => any;
   readonly get_version: () => [number, number];
   readonly init: () => void;
-  readonly run_from_cst_json: (a: number, b: number, c: number, d: number, e: bigint) => any;
   readonly run_from_source: (a: number, b: number, c: bigint) => any;
   readonly run_ir_json: (a: number, b: number, c: bigint) => any;
   readonly run_ir_simple: (a: number, b: number, c: bigint) => number;

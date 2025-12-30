@@ -5,7 +5,6 @@ export const get_supported_features: () => any;
 export const get_unsupported_features: () => any;
 export const get_version: () => [number, number];
 export const init: () => void;
-export const run_from_cst_json: (a: number, b: number, c: number, d: number, e: bigint) => any;
 export const run_from_source: (a: number, b: number, c: bigint) => any;
 export const run_ir_json: (a: number, b: number, c: bigint) => any;
 export const run_ir_simple: (a: number, b: number, c: bigint) => number;
