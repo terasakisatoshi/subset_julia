@@ -33,6 +33,22 @@ export function init(): void;
 export function run_from_cst_json(cst_json: string, source: string, seed: bigint): any;
 
 /**
+ * Run Julia source code directly using the pure Rust parser.
+ *
+ * This is the recommended entry point for running Julia code in WASM.
+ * It uses subset_julia_vm_parser which is a pure Rust parser that works
+ * natively in WASM without requiring web-tree-sitter.
+ *
+ * # Arguments
+ * * `source` - Julia source code to execute
+ * * `seed` - Random seed for deterministic execution
+ *
+ * # Returns
+ * An ExecutionResult object containing success status, value, output, and error message
+ */
+export function run_from_source(source: string, seed: bigint): any;
+
+/**
  * Run a Core IR JSON program and return the result.
  *
  * This function takes a JSON-serialized Core IR program and executes it.
@@ -85,17 +101,31 @@ export interface InitOutput {
   readonly get_version: () => [number, number];
   readonly init: () => void;
   readonly run_from_cst_json: (a: number, b: number, c: number, d: number, e: bigint) => any;
+  readonly run_from_source: (a: number, b: number, c: bigint) => any;
   readonly run_ir_json: (a: number, b: number, c: bigint) => any;
   readonly run_ir_simple: (a: number, b: number, c: bigint) => number;
   readonly unicode_completions: (a: number, b: number) => any;
   readonly unicode_expand: (a: number, b: number) => [number, number];
   readonly unicode_lookup: (a: number, b: number) => [number, number];
   readonly unicode_reverse_lookup: (a: number, b: number) => [number, number];
+  readonly compile_and_run: (a: number, b: bigint) => number;
+  readonly compile_and_run_auto: (a: number, b: bigint) => number;
+  readonly compile_and_run_detailed: (a: number, b: bigint) => number;
+  readonly compile_and_run_streaming: (a: number, b: bigint, c: number, d: number) => number;
+  readonly compile_and_run_with_output: (a: number, b: bigint) => number;
+  readonly compile_to_ir: (a: number) => number;
   readonly free_execution_result: (a: number) => void;
+  readonly free_repl_result: (a: number) => void;
   readonly free_string: (a: number) => void;
+  readonly is_expression_complete: (a: number) => number;
+  readonly repl_session_eval: (a: number, b: number) => number;
+  readonly repl_session_free: (a: number) => void;
+  readonly repl_session_new: (a: bigint) => number;
+  readonly repl_session_reset: (a: number) => void;
   readonly run_ir_json_f64: (a: number) => number;
   readonly run_ir_json_f64_N_seed: (a: number, b: bigint, c: bigint) => number;
   readonly run_ir_json_f_N_seed: (a: number, b: bigint, c: bigint) => bigint;
+  readonly split_expressions: (a: number) => number;
   readonly subset_julia_vm_demo: () => void;
   readonly vm_request_cancel: () => void;
   readonly vm_reset_cancel: () => void;

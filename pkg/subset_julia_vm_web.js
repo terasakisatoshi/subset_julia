@@ -152,6 +152,30 @@ export function run_from_cst_json(cst_json, source, seed) {
 }
 
 /**
+ * Run Julia source code directly using the pure Rust parser.
+ *
+ * This is the recommended entry point for running Julia code in WASM.
+ * It uses subset_julia_vm_parser which is a pure Rust parser that works
+ * natively in WASM without requiring web-tree-sitter.
+ *
+ * # Arguments
+ * * `source` - Julia source code to execute
+ * * `seed` - Random seed for deterministic execution
+ *
+ * # Returns
+ * An ExecutionResult object containing success status, value, output, and error message
+ * @param {string} source
+ * @param {bigint} seed
+ * @returns {any}
+ */
+export function run_from_source(source, seed) {
+    const ptr0 = passStringToWasm0(source, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+    const len0 = WASM_VECTOR_LEN;
+    const ret = wasm.run_from_source(ptr0, len0, seed);
+    return ret;
+}
+
+/**
  * Run a Core IR JSON program and return the result.
  *
  * This function takes a JSON-serialized Core IR program and executes it.

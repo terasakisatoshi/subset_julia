@@ -1,11 +1,7 @@
 // SubsetJuliaVM Playground - Main Application (Monaco Editor version)
+// Uses run_from_source() for native parity - pure Rust parser, no tree-sitter dependency
 import { samplesIR } from './samples_ir.js?v=23';
 import { registerJuliaLanguage, setWasmModule } from './julia-language.js?v=4';
-
-// Note: lowering.js is no longer needed - we use Rust-based lowering via run_from_cst_json
-
-// TreeSitter will be loaded dynamically
-let TreeSitter = null;
 
 // Elements
 const sampleSelect = document.getElementById('sample-select');
@@ -20,7 +16,6 @@ const clearOutputBtn = document.getElementById('clear-output-btn');
 
 // State
 let wasm = null;
-let parser = null;
 let editor = null;
 let currentSampleIndex = 0;
 
@@ -82,8 +77,8 @@ async function init() {
     // Set up event listeners
     setupEventListeners();
 
-    // Load WASM module, parser, and Monaco in parallel
-    await Promise.all([loadWasm(), loadParser(), loadMonaco()]);
+    // Load WASM module and Monaco in parallel
+    await Promise.all([loadWasm(), loadMonaco()]);
 
     // Set WASM module for Unicode completion provider
     if (wasm) {
@@ -165,34 +160,6 @@ async function loadMonaco() {
             resolve();
         });
     });
-}
-
-async function loadParser() {
-    try {
-        // Load TreeSitter via ESM dynamic import (0.25.x is an ESM module)
-        console.log('Loading TreeSitter module...');
-        const module = await import('https://cdn.jsdelivr.net/npm/web-tree-sitter@0.25.0/+esm');
-
-        // web-tree-sitter 0.25.x exports Parser and Language as separate classes
-        const Parser = module.Parser;
-        const Language = module.Language;
-        console.log('TreeSitter module loaded');
-
-        console.log('Initializing Parser...');
-        await Parser.init();
-        console.log('Parser initialized');
-
-        parser = new Parser();
-        console.log('Loading Julia language WASM...');
-        const Julia = await Language.load('./tree-sitter-julia.wasm');
-        parser.setLanguage(Julia);
-        console.log('Parser loaded successfully');
-
-        // Keep TreeSitter reference for compatibility
-        TreeSitter = Parser;
-    } catch (e) {
-        console.error('Parser loading failed:', e);
-    }
 }
 
 function populateSamples() {
@@ -328,111 +295,16 @@ async function run() {
     runBtn.textContent = 'Running...';
 
     try {
-        // First, check if this matches a pre-compiled sample (with normalized whitespace)
-        const normalizedCode = code.trim();
-        console.log('Looking for pre-compiled sample...');
-        console.log('Code length:', normalizedCode.length);
-        const sample = samplesIR.find(s => s.code.trim() === normalizedCode);
-        console.log('Found sample:', sample ? sample.name : 'none');
-
-        if (sample && sample.ir) {
-            // Execute using pre-compiled IR
-            console.log('Using pre-compiled IR for:', sample.name);
-            const execResult = wasm.run_ir_json(sample.ir, BigInt(seed));
-            displayResult(execResult);
-        } else if (parser) {
-            // Parse and compile custom code
-            console.log('Using WASM-side lowering for custom code');
-            await runCustomCode(code, seed);
-        } else {
-            showError('Parser not loaded. Custom code execution requires the Julia parser.');
-        }
-
+        // Use run_from_source for all code (native parity - uses pure Rust parser)
+        console.log('Executing with run_from_source (native parity)...');
+        const execResult = wasm.run_from_source(code, BigInt(seed));
+        displayResult(execResult);
     } catch (e) {
         showError(e.message || 'Execution failed');
     } finally {
         runBtn.disabled = false;
         runBtn.textContent = runButtonText;
     }
-}
-
-async function runCustomCode(code, seed) {
-    try {
-        // Parse with tree-sitter
-        console.log('Parsing code...');
-        const tree = parser.parse(code);
-        console.log('Parse tree:', tree.rootNode.toString());
-
-        // Check for parse errors
-        if (tree.rootNode.hasError) {
-            // Find error nodes
-            const errors = findErrors(tree.rootNode);
-            if (errors.length > 0) {
-                showError(`Parse error at line ${errors[0].startPosition.row + 1}: unexpected syntax`);
-                return;
-            }
-        }
-
-        // Serialize CST to JSON (for Rust-based lowering)
-        console.log('Serializing CST to JSON...');
-        const cstJson = serializeCst(tree.rootNode, code);
-        console.log('CST JSON length:', cstJson.length);
-
-        // Execute using Rust-based lowering
-        console.log('Executing with Rust-based lowering...');
-        const execResult = wasm.run_from_cst_json(cstJson, code, BigInt(seed));
-
-        displayResult(execResult);
-
-    } catch (e) {
-        console.error('Error:', e);
-        showError(`Compilation error: ${e.message}`);
-    }
-}
-
-// Serialize a tree-sitter node to JSON format expected by JsonCstNode
-function serializeCst(node, source) {
-    return JSON.stringify(serializeNode(node, source));
-}
-
-// Recursively serialize a tree-sitter node
-function serializeNode(node, source) {
-    // Extract text from source using byte indices
-    // This is more reliable than node.text which may not always be available
-    const text = source.substring(node.startIndex, node.endIndex);
-
-    const result = {
-        type: node.type,
-        start: node.startIndex,
-        end: node.endIndex,
-        start_line: node.startPosition.row + 1, // 1-indexed
-        end_line: node.endPosition.row + 1,     // 1-indexed
-        start_column: node.startPosition.column + 1, // 1-indexed
-        end_column: node.endPosition.column + 1,     // 1-indexed
-        is_named: node.isNamed,
-        text: text,
-        children: []
-    };
-
-    // Serialize all children
-    for (let i = 0; i < node.childCount; i++) {
-        const child = node.child(i);
-        if (child) {
-            result.children.push(serializeNode(child, source));
-        }
-    }
-
-    return result;
-}
-
-function findErrors(node, errors = []) {
-    if (node.type === 'ERROR' || node.isMissing) {
-        errors.push(node);
-    }
-    for (let i = 0; i < node.childCount; i++) {
-        findErrors(node.child(i), errors);
-    }
-    return errors;
 }
 
 function displayResult(execResult) {
@@ -467,27 +339,13 @@ function hideError() {
 // Start the application
 init();
 
-// Debug functions exposed to window for console debugging
-window.debugParse = function(code) {
-    if (!parser) {
-        console.error('Parser not loaded');
-        return null;
-    }
-    const tree = parser.parse(code);
-    const cst = serializeNode(tree.rootNode, code);
-    console.log(JSON.stringify(cst, null, 2));
-    return cst;
-};
-
+// Debug function exposed to window for console debugging
 window.debugRun = function(code) {
-    if (!parser || !wasm) {
-        console.error('Parser or WASM not loaded');
+    if (!wasm) {
+        console.error('WASM not loaded');
         return null;
     }
-    const tree = parser.parse(code);
-    const cstJson = serializeCst(tree.rootNode, code);
-    console.log('CST JSON:', cstJson);
-    const result = wasm.run_from_cst_json(cstJson, code, BigInt(42));
+    const result = wasm.run_from_source(code, BigInt(42));
     console.log('Result:', result);
     return result;
 };

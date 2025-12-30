@@ -136,122 +136,14 @@
             background: #66d9ef;
             transition: width 0.3s;
         }
-
-        /* Debug Parse Section */
-        .debug-section {
-            margin-bottom: 2rem;
-            padding: 1rem;
-            background: #272822;
-            border-radius: 8px;
-        }
-
-        .debug-section h2 {
-            margin-bottom: 1rem;
-            font-size: 1.2rem;
-        }
-
-        .debug-input {
-            width: 100%;
-            min-height: 100px;
-            padding: 0.75rem;
-            background: #1e1f1c;
-            border: 1px solid #3e3d32;
-            border-radius: 4px;
-            color: #f8f8f2;
-            font-family: 'Fira Code', monospace;
-            font-size: 14px;
-            resize: vertical;
-            margin-bottom: 0.5rem;
-        }
-
-        .debug-input:focus {
-            outline: none;
-            border-color: #66d9ef;
-        }
-
-        .debug-output {
-            max-height: 400px;
-            overflow: auto;
-            padding: 0.75rem;
-            background: #1e1f1c;
-            border-radius: 4px;
-            font-family: monospace;
-            font-size: 12px;
-            white-space: pre;
-            margin-top: 0.5rem;
-        }
-
-        .debug-output.error {
-            color: #f92672;
-        }
-
-        .debug-output .key {
-            color: #66d9ef;
-        }
-
-        .debug-output .string {
-            color: #e6db74;
-        }
-
-        .debug-output .number {
-            color: #ae81ff;
-        }
-
-        .debug-output .boolean {
-            color: #f92672;
-        }
-
-        .debug-tabs {
-            display: flex;
-            gap: 0.5rem;
-            margin-bottom: 0.5rem;
-        }
-
-        .debug-tab {
-            padding: 0.25rem 0.75rem;
-            background: #3e3d32;
-            border: none;
-            border-radius: 4px;
-            color: #f8f8f2;
-            cursor: pointer;
-            font-size: 0.875rem;
-        }
-
-        .debug-tab.active {
-            background: #66d9ef;
-            color: #1e1f1c;
-        }
-
-        .debug-tab:hover:not(.active) {
-            background: #4e4d42;
-        }
     </style>
 </head>
 <body>
     <h1>SubsetJuliaVM Web Test Runner</h1>
 
-    <!-- Debug Parse Section -->
-    <div class="debug-section">
-        <h2>Debug Parse</h2>
-        <textarea id="debug-input" class="debug-input" placeholder="Enter Julia code to parse...">1 + 2 * 3</textarea>
-        <div class="controls">
-            <button id="debug-parse-btn" class="primary">Parse</button>
-            <div class="debug-tabs">
-                <button class="debug-tab active" data-view="tree" data-copy="tree" title="Click to copy Tree view">Tree</button>
-                <button class="debug-tab" data-view="json" data-copy="json" title="Click to copy JSON">JSON</button>
-                <button class="debug-tab" data-view="sexp" data-copy="sexp" title="Click to copy S-expr">S-expr</button>
-            </div>
-        </div>
-        <div id="debug-output" class="debug-output"></div>
-    </div>
-
-    <hr style="border-color: #3e3d32; margin: 2rem 0;">
-
-    <h2>Test Runner</h2>
-
     <div class="controls">
-        <button id="run-all" class="primary">Run All Tests</button>
-        <button id="run-failed">Re-run Failed</button>
+        <button id="run-all" class="primary" disabled>Run All Tests</button>
+        <button id="run-failed" disabled>Re-run Failed</button>
         <span id="status"></span>
     </div>
 
@@ -269,7 +161,6 @@
         import { samplesIR } from './samples_ir.js?v=23';
 
         let wasm = null;
-        let parser = null;
         let testResults = [];
 
         // Initialize
@@ -277,19 +168,11 @@
             document.getElementById('status').textContent = 'Loading...';
 
             try {
-                // Load WASM
+                // Load WASM (includes Pure Rust parser - no tree-sitter needed)
                 const module = await import('./pkg/subset_julia_vm_web.js');
                 await module.default();
                 wasm = module;
-                console.log('WASM loaded');
-
-                // Load parser
-                const { Parser: TSParser, Language } = await import('https://cdn.jsdelivr.net/npm/web-tree-sitter@0.25.3/tree-sitter.js');
-                await TSParser.init();
-                parser = new TSParser();
-                const Julia = await Language.load('./tree-sitter-julia.wasm');
-                parser.setLanguage(Julia);
-                console.log('Parser loaded');
+                console.log('WASM loaded (using Pure Rust parser)');
 
                 document.getElementById('status').textContent = 'Ready';
                 document.getElementById('run-all').disabled = false;
@@ -310,32 +193,6 @@
                     <div class="status">Pending</div>
                 </div>
             `).join('');
-        }
-
-        // Serialize CST
-        function serializeNode(node, source) {
-            const text = source.substring(node.startIndex, node.endIndex);
-            const result = {
-                type: node.type,
-                start: node.startIndex,
-                end: node.endIndex,
-                start_line: node.startPosition.row + 1,
-                end_line: node.endPosition.row + 1,
-                start_column: node.startPosition.column + 1,
-                end_column: node.endPosition.column + 1,
-                is_named: node.isNamed,
-                text: text,
-                children: []
-            };
-
-            for (let i = 0; i < node.childCount; i++) {
-                const child = node.child(i);
-                if (child) {
-                    result.children.push(serializeNode(child, source));
-                }
-            }
-
-            return result;
         }
 
         // Run single test
@@ -362,16 +219,8 @@
                     // Use pre-compiled IR
                     result = wasm.run_ir_json(sample.ir, BigInt(seed));
                 } else {
-                    // Parse and run
-                    const tree = parser.parse(code);
-
-                    // Check for parse errors
-                    if (tree.rootNode.hasError) {
-                        throw new Error('Parse error in source code');
-                    }
-
-                    const cstJson = JSON.stringify(serializeNode(tree.rootNode, code));
-                    result = wasm.run_from_cst_json(cstJson, code, BigInt(seed));
+                    // Parse and run using Pure Rust parser (same as Playground)
+                    result = wasm.run_from_source(code, BigInt(seed));
                 }
 
                 if (result.success) {
@@ -417,7 +266,6 @@
             testResults = [];
             let passed = 0;
             let failed = 0;
-            let skipped = 0;
 
             const samplesToRun = onlyFailed
                 ? samplesIR.map((s, i) => ({ sample: s, idx: i }))
@@ -459,200 +307,8 @@
         document.getElementById('run-all').addEventListener('click', () => runAllTests(false));
         document.getElementById('run-failed').addEventListener('click', () => runAllTests(true));
 
-        // Debug Parse functionality
-        let currentView = 'tree';
-        let lastParsedCst = null;
-
-        function setupDebugParse() {
-            const debugInput = document.getElementById('debug-input');
-            const debugOutput = document.getElementById('debug-output');
-            const parseBtn = document.getElementById('debug-parse-btn');
-            const tabs = document.querySelectorAll('.debug-tab');
-
-            parseBtn.addEventListener('click', () => {
-                debugParse(debugInput.value);
-            });
-
-            // Ctrl/Cmd+Enter to parse
-            debugInput.addEventListener('keydown', (e) => {
-                if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
-                    e.preventDefault();
-                    debugParse(debugInput.value);
-                }
-            });
-
-            // Tab switching and copy functionality
-            tabs.forEach(tab => {
-                tab.addEventListener('click', async () => {
-                    tabs.forEach(t => t.classList.remove('active'));
-                    tab.classList.add('active');
-                    currentView = tab.dataset.view;
-                    if (lastParsedCst) {
-                        renderCst(lastParsedCst, debugInput.value);
-                        // Copy content to clipboard
-                        const textToCopy = getCopyText(tab.dataset.copy, lastParsedCst, debugInput.value);
-                        await copyToClipboard(textToCopy, tab);
-                    }
-                });
-            });
-        }
-
-        function debugParse(code) {
-            const debugOutput = document.getElementById('debug-output');
-
-            if (!parser) {
-                debugOutput.className = 'debug-output error';
-                debugOutput.textContent = 'Parser not loaded yet. Please wait...';
-                return;
-            }
-
-            try {
-                const tree = parser.parse(code);
-                lastParsedCst = tree.rootNode;
-                renderCst(tree.rootNode, code);
-            } catch (e) {
-                debugOutput.className = 'debug-output error';
-                debugOutput.textContent = 'Parse error: ' + e.message;
-            }
-        }
-
-        function renderCst(rootNode, source) {
-            const debugOutput = document.getElementById('debug-output');
-            debugOutput.className = 'debug-output';
-
-            switch (currentView) {
-                case 'tree':
-                    debugOutput.innerHTML = renderTree(rootNode, source, 0);
-                    break;
-                case 'json':
-                    const cst = serializeNode(rootNode, source);
-                    debugOutput.innerHTML = syntaxHighlightJson(JSON.stringify(cst, null, 2));
-                    break;
-                case 'sexp':
-                    debugOutput.textContent = rootNode.toString();
-                    break;
-            }
-        }
-
-        function renderTree(node, source, depth) {
-            const indent = '  '.repeat(depth);
-            const text = source.substring(node.startIndex, node.endIndex);
-            const shortText = text.length > 40 ? text.substring(0, 40) + '...' : text;
-            const escapedText = shortText.replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\n/g, '\\n');
-
-            let html = `${indent}<span class="key">${node.type}</span>`;
-            if (node.childCount === 0) {
-                html += ` <span class="string">"${escapedText}"</span>`;
-            }
-            html += ` <span class="number">[${node.startIndex}:${node.endIndex}]</span>`;
-            if (node.hasError) {
-                html += ` <span class="boolean">ERROR</span>`;
-            }
-            html += '\n';
-
-            for (let i = 0; i < node.childCount; i++) {
-                const child = node.child(i);
-                if (child) {
-                    html += renderTree(child, source, depth + 1);
-                }
-            }
-
-            return html;
-        }
-
-        function syntaxHighlightJson(json) {
-            return json
-                .replace(/&/g, '&amp;')
-                .replace(/</g, '&lt;')
-                .replace(/>/g, '&gt;')
-                .replace(/("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d*)?(?:[eE][+\-]?\d+)?)/g, function (match) {
-                    let cls = 'number';
-                    if (/^"/.test(match)) {
-                        if (/:$/.test(match)) {
-                            cls = 'key';
-                            match = match.slice(0, -1); // Remove trailing colon for styling
-                            return '<span class="' + cls + '">' + match + '</span>:';
-                        } else {
-                            cls = 'string';
-                        }
-                    } else if (/true|false/.test(match)) {
-                        cls = 'boolean';
-                    } else if (/null/.test(match)) {
-                        cls = 'boolean';
-                    }
-                    return '<span class="' + cls + '">' + match + '</span>';
-                });
-        }
-
-        function getCopyText(copyType, rootNode, source) {
-            switch (copyType) {
-                case 'tree':
-                    return renderTreePlainText(rootNode, source, 0);
-                case 'json':
-                    const cst = serializeNode(rootNode, source);
-                    return JSON.stringify(cst, null, 2);
-                case 'sexp':
-                    return rootNode.toString();
-                default:
-                    return '';
-            }
-        }
-
-        function renderTreePlainText(node, source, depth) {
-            const indent = '  '.repeat(depth);
-            const text = source.substring(node.startIndex, node.endIndex);
-            const shortText = text.length > 40 ? text.substring(0, 40) + '...' : text;
-            const escapedText = shortText.replace(/\n/g, '\\n');
-
-            let output = `${indent}${node.type}`;
-            if (node.childCount === 0) {
-                output += ` "${escapedText}"`;
-            }
-            output += ` [${node.startIndex}:${node.endIndex}]`;
-            if (node.hasError) {
-                output += ` ERROR`;
-            }
-            output += '\n';
-
-            for (let i = 0; i < node.childCount; i++) {
-                const child = node.child(i);
-                if (child) {
-                    output += renderTreePlainText(child, source, depth + 1);
-                }
-            }
-
-            return output;
-        }
-
-        async function copyToClipboard(text, buttonEl) {
-            try {
-                await navigator.clipboard.writeText(text);
-                const originalText = buttonEl.textContent;
-                buttonEl.textContent = 'Copied!';
-                buttonEl.style.background = '#a6e22e';
-                buttonEl.style.color = '#1e1f1c';
-                setTimeout(() => {
-                    buttonEl.textContent = originalText;
-                    if (buttonEl.classList.contains('active')) {
-                        buttonEl.style.background = '#66d9ef';
-                    } else {
-                        buttonEl.style.background = '#3e3d32';
-                        buttonEl.style.color = '#f8f8f2';
-                    }
-                }, 1000);
-            } catch (err) {
-                console.error('Failed to copy:', err);
-            }
-        }
-
         // Start
-        init().then(() => {
-            setupDebugParse();
-            // Parse initial code after parser is loaded
-            setTimeout(() => {
-                debugParse(document.getElementById('debug-input').value);
-            }, 100);
-        });
+        init();
     </script>
 </body>
 </html>
