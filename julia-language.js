@@ -203,6 +203,54 @@ function extractVariables(code) {
     return variables;
 }
 
+// Extract function names from Julia code with usage counts
+function extractFunctions(code) {
+    const functions = new Map(); // name -> count
+
+    const incrementFunction = (funcName) => {
+        // Filter out keywords and built-in names
+        if (completionKeywords.includes(funcName) || builtinFunctions.includes(funcName)) {
+            return;
+        }
+        functions.set(funcName, (functions.get(funcName) || 0) + 1);
+    };
+
+    // Pattern for function definitions: function name(...) or function name(...)::Type
+    const funcDefRegex = /function\s+([a-zA-Z_][a-zA-Z0-9_!?]*)\s*\(/g;
+    let match;
+    while ((match = funcDefRegex.exec(code)) !== null) {
+        incrementFunction(match[1]);
+    }
+
+    // Pattern for short-form function definitions: name(args) = expr
+    // Must not be preceded by . (for field access) and not be an assignment to existing variable
+    const shortFormRegex = /(?:^|[^.])\s*([a-zA-Z_][a-zA-Z0-9_!?]*)\s*\([^)]*\)\s*(?:::[a-zA-Z_][a-zA-Z0-9_]*)?\s*=/gm;
+    while ((match = shortFormRegex.exec(code)) !== null) {
+        const funcName = match[1];
+        // Exclude common variable patterns
+        if (!['let', 'const', 'local', 'global'].includes(funcName)) {
+            incrementFunction(funcName);
+        }
+    }
+
+    // Pattern for lambda assignments: name = (args) -> expr or name = x -> expr
+    const lambdaAssignRegex = /([a-zA-Z_][a-zA-Z0-9_!?]*)\s*=\s*(?:\([^)]*\)|[a-zA-Z_][a-zA-Z0-9_]*)\s*->/g;
+    while ((match = lambdaAssignRegex.exec(code)) !== null) {
+        incrementFunction(match[1]);
+    }
+
+    // Count function calls/usage (not just declaration)
+    const callRegex = /\b([a-zA-Z_][a-zA-Z0-9_!?]*)\s*\(/g;
+    while ((match = callRegex.exec(code)) !== null) {
+        const name = match[1];
+        if (functions.has(name)) {
+            functions.set(name, functions.get(name) + 1);
+        }
+    }
+
+    return functions;
+}
+
 export function setWasmModule(wasm) {
     wasmModule = wasm;
 }
@@ -559,6 +607,9 @@ export function registerJuliaLanguage(monaco) {
             const suggestions = [];
             let sortIndex = 0;
 
+            // Get the full code for extraction
+            const fullCode = model.getValue();
+
             // Add matching keywords (high priority)
             for (const keyword of completionKeywords) {
                 if (keyword.toLowerCase().startsWith(prefixLower)) {
@@ -583,6 +634,24 @@ export function registerJuliaLanguage(monaco) {
                         range: range,
                         detail: 'builtin',
                         sortText: `1${String(sortIndex++).padStart(3, '0')}` // Functions second
+                    });
+                }
+            }
+
+            // Extract and add user-defined functions from the current code
+            const userFunctions = extractFunctions(fullCode); // Returns Map<name, count>
+            const sortedFunctions = Array.from(userFunctions.entries())
+                .sort((a, b) => b[1] - a[1]); // Sort by count, most used first
+
+            for (const [funcName, count] of sortedFunctions) {
+                if (funcName.toLowerCase().startsWith(prefixLower)) {
+                    suggestions.push({
+                        label: funcName,
+                        kind: monaco.languages.CompletionItemKind.Function,
+                        insertText: funcName,
+                        range: range,
+                        detail: `user-defined (used ${count}x)`,
+                        sortText: `1${String(500 - count).padStart(4, '0')}` // User functions after builtins but before constants
                     });
                 }
             }
@@ -618,7 +687,6 @@ export function registerJuliaLanguage(monaco) {
             }
 
             // Extract and add variables from the current code
-            const fullCode = model.getValue();
             const variables = extractVariables(fullCode); // Now returns Map<name, count>
 
             // Convert to array and sort by usage count (descending)
