@@ -1252,6 +1252,52 @@ println(sqrt(particle.x^2 + particle.y^2))`,
     ir: null
   },
   {
+    name: "MyGeometry Module",
+    code: `module MyGeometry
+
+using Statistics: mean
+
+export distance
+export Point
+
+struct Point{T<:Real}
+    x::T
+    y::T
+end
+
+Base.:+(p::Point{T}, q::Point{T}) where T <: Real = Point{T}(p.x + q.x, p.y + q.y)
+Base.:-(p::Point{T}, q::Point{T}) where T <: Real = Point{T}(p.x - q.x, p.y - q.y)
+
+function distance(p::Point{T}, q::Point{T}) where T <: Real
+    return sqrt((q.x - p.x)^2 + (q.y - p.y)^2)
+end
+
+function centroid(points::Vector{Point{T}}) where T <: Real
+    x = mean([point.x for point in points])
+    y = mean([point.y for point in points])
+    Tnew = promote_type(typeof(x), typeof(y))
+    return Point{Tnew}(x, y)
+end
+
+end #module
+
+using .MyGeometry
+
+p = Point(3, 4)
+q = Point(0, 0)
+
+@assert distance(p, q) == 5.0
+@assert p isa Point{Int}
+@assert typeof(p) === Point{Int}
+@assert p + q == Point(3, 4)
+@assert p - q == Point(3, 4)
+@assert MyGeometry.centroid([Point(1, 2), Point(3, 4), Point(5, 6)]) == Point(3.0, 4.0)
+
+println("All assertions passed!")
+println(distance(p, q))`,
+    ir: null
+  },
+  {
     name: "Complex Numbers",
     code: `# Complex number operations
 z1 = complex(3.0, 4.0)
