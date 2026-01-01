@@ -1,4 +1,6 @@
-Privacy Policy（日本語・雛形）
+English follows Japanese
+
+Privacy Policy（日本語）
 
 プライバシーポリシー（SubsetJuliaVM）
 
@@ -28,7 +30,7 @@ Email: （あなたの連絡用メール）
 本ポリシーは必要に応じて改定されます。改定後は本ページで公表します。
 制定日：2026-01-01
 
-Privacy Policy（English・Template）
+Privacy Policy（English）
 
 Privacy Policy (SubsetJuliaVM)
 
