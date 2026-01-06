@@ -2,7 +2,7 @@
   "name": "subset_julia_vm_web",
   "type": "module",
   "description": "WebAssembly binding for SubsetJuliaVM - Julia subset interpreter",
-  "version": "0.1.0",
+  "version": "0.3.4",
   "license": "MIT",
   "files": [
     "subset_julia_vm_web_bg.wasm",
