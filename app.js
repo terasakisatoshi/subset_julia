@@ -1,6 +1,6 @@
 // SubsetJuliaVM Playground - Main Application (Monaco Editor version)
 // Uses run_from_source() for native parity - pure Rust parser, no tree-sitter dependency
-import { samplesIR } from './samples_ir.js?v=23';
+import { samplesIR } from './samples_ir.js?v=24';
 import { registerJuliaLanguage, setWasmModule } from './julia-language.js?v=4';
 
 // Elements

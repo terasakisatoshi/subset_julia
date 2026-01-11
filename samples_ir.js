@@ -1311,5 +1311,106 @@ println("|z1| = ", abs(z1))
 
 abs(z1)`,
     ir: null
+  },
+  {
+    name: "Meta.parse & eval",
+    code: `# Meta.parse and eval - Metaprogramming in Julia
+# Parse a string into an expression and evaluate it
+
+# Parse a simple expression
+expr = Meta.parse("1+1")
+println("Expression: ", expr)
+println("Head: ", expr.head)
+println("Args: ", expr.args)
+println("Result: ", eval(expr))
+
+println("")
+
+# Parse a more complex expression
+expr2 = Meta.parse("2 * 3 + 4")
+println("Expression: ", expr2)
+println("Head: ", expr2.head)
+println("Args: ", expr2.args)
+println("Result: ", eval(expr2))
+
+println("")
+
+# Parse a function call
+expr3 = Meta.parse("sqrt(16)")
+println("Expression: ", expr3)
+println("Head: ", expr3.head)
+println("Args: ", expr3.args)
+println("Result: ", eval(expr3))
+
+println("")
+
+# Expr variables persist correctly - can be reused
+println("Verifying Expr persistence:")
+println("eval(expr) = ", eval(expr))    # Still returns 2
+println("eval(expr2) = ", eval(expr2))  # Still returns 10
+println("eval(expr3) = ", eval(expr3))  # Still returns 4.0
+
+eval(expr)`,
+    ir: null
+  },
+  {
+    name: "User-Defined Macros",
+    code: `# User-Defined Macros - Create your own macros in Julia
+
+# Simple macro that doubles an expression
+macro twice(expr)
+    quote
+        $(esc(expr))
+        $(esc(expr))
+    end
+end
+
+println("=== @twice macro ===")
+@twice println("Hello!")
+
+println("")
+
+# Macro that wraps code with before/after messages
+macro debug(expr)
+    quote
+        println("[DEBUG] Executing...")
+        result = $(esc(expr))
+        println("[DEBUG] Done. Result: ", result)
+        result
+    end
+end
+
+println("=== @debug macro ===")
+x = @debug 1 + 2 + 3
+println("x = ", x)
+
+println("")
+
+# Macro that adds two expressions
+macro add(a, b)
+    quote
+        $(esc(a)) + $(esc(b))
+    end
+end
+
+println("=== @add macro ===")
+result = @add 10 20
+println("@add 10 20 = ", result)
+
+println("")
+
+# Macro that multiplies an expression by 2
+macro double(expr)
+    quote
+        2 * $(esc(expr))
+    end
+end
+
+println("=== @double macro ===")
+println("@double 21 = ", @double 21)
+println("@double 3 + 4 = ", @double 3 + 4)
+
+result`,
+    ir: null
   }
 ];
