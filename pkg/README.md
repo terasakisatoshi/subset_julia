@@ -210,6 +210,31 @@ default-features = false
 features = ["wasm"]
 ```
 
+### getrandom 依存関係について
+
+`Cargo.toml` で `getrandom` を明示的に依存関係として追加していますが、このクレート内では直接使用していません。
+
+**依存関係のチェーン:**
+```
+subset_julia_vm_web
+  └── subset_julia_vm
+      └── astro-float
+          └── astro-float-num
+              └── rand
+                  └── rand_core
+                      └── getrandom
+```
+
+**明示的に追加する理由:**
+
+`getrandom` は間接的な依存関係として必要ですが、WASM 環境で正しく動作させるためには `features = ["js"]` を有効化する必要があります。間接依存だけでは、WASM ビルド時に JavaScript の `crypto.getRandomValues()` を使用する機能が有効にならない可能性があります。
+
+```toml
+getrandom = { version = "0.2", features = ["js"] }
+```
+
+この設定により、WASM 環境でランダム数生成が正しく動作します。削除すると、`astro-float` が使用する `rand` クレートが WASM 環境で正しく機能しなくなる可能性があります。
+
 ## サンプルコードの更新
 
 ### samples_ir.js の構造

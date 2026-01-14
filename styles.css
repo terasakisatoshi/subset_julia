@@ -135,6 +135,21 @@ main {
     cursor: not-allowed;
 }
 
+/* Share button style */
+#share-btn {
+    background: var(--accent-secondary);
+    color: var(--bg-primary);
+}
+
+#share-btn:hover {
+    background: #8bc624;
+}
+
+#share-btn.copied {
+    background: var(--success);
+    color: var(--bg-primary);
+}
+
 .toolbar label {
     display: flex;
     align-items: center;

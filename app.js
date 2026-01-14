@@ -1,11 +1,12 @@
 // SubsetJuliaVM Playground - Main Application (Monaco Editor version)
 // Uses run_from_source() for native parity - pure Rust parser, no tree-sitter dependency
-import { samplesIR } from './samples_ir.js?v=23';
+import { samplesIR } from './samples_ir.js?v=24';
 import { registerJuliaLanguage, setWasmModule } from './julia-language.js?v=4';
 
 // Elements
 const sampleSelect = document.getElementById('sample-select');
 const runBtn = document.getElementById('run-btn');
+const shareBtn = document.getElementById('share-btn');
 const copySourceBtn = document.getElementById('copy-source-btn');
 const output = document.getElementById('output');
 const result = document.getElementById('result');
@@ -13,6 +14,98 @@ const errorDiv = document.getElementById('error');
 const versionSpan = document.getElementById('version');
 const copyBtn = document.getElementById('copy-btn');
 const clearOutputBtn = document.getElementById('clear-output-btn');
+
+// ============================================================
+// URL Sharing Functions
+// ============================================================
+
+/**
+ * Get code from URL hash
+ * @returns {string | null} Decoded code or null if not present/invalid
+ */
+function getCodeFromHash() {
+    const hash = window.location.hash;
+    if (!hash || hash.length < 3) return null;
+
+    // Parse hash parameters (e.g., #c=encoded_code)
+    const params = new URLSearchParams(hash.substring(1));
+    const encoded = params.get('c');
+    if (!encoded) return null;
+
+    try {
+        const decoded = LZString.decompressFromEncodedURIComponent(encoded);
+        if (!decoded) {
+            throw new Error('Decompression returned null');
+        }
+        return decoded;
+    } catch (e) {
+        console.error('Failed to decode code from URL:', e);
+        return null;
+    }
+}
+
+/**
+ * Set code to URL hash using history.replaceState (doesn't pollute history)
+ * @param {string} code - Code to encode into URL
+ * @returns {string} The full shareable URL
+ */
+function setCodeToHash(code) {
+    const encoded = LZString.compressToEncodedURIComponent(code);
+    const newHash = `#c=${encoded}`;
+
+    // Use replaceState to avoid polluting browser history
+    const newUrl = `${window.location.origin}${window.location.pathname}${newHash}`;
+    history.replaceState(null, '', newUrl);
+
+    return newUrl;
+}
+
+/**
+ * Copy shareable URL to clipboard
+ * @param {string} code - Code to share
+ * @returns {Promise<string>} The generated URL
+ */
+async function copyShareUrl(code) {
+    const url = setCodeToHash(code);
+
+    try {
+        await navigator.clipboard.writeText(url);
+        return url;
+    } catch (e) {
+        console.error('Clipboard API failed:', e);
+        // Fallback for older browsers or when clipboard API is not available
+        const textArea = document.createElement('textarea');
+        textArea.value = url;
+        textArea.style.position = 'fixed';
+        textArea.style.opacity = '0';
+        document.body.appendChild(textArea);
+        textArea.select();
+        try {
+            document.execCommand('copy');
+        } catch (e2) {
+            console.error('Fallback copy failed:', e2);
+            // If all copy methods fail, show the URL so user can copy manually
+            throw new Error(`Could not copy automatically. URL: ${url}`);
+        } finally {
+            document.body.removeChild(textArea);
+        }
+        return url;
+    }
+}
+
+/**
+ * Restore code from URL hash if present
+ * @returns {boolean} True if code was restored from hash
+ */
+function restoreCodeFromHash() {
+    const code = getCodeFromHash();
+    if (code !== null && editor) {
+        editor.setValue(code);
+        sampleSelect.value = ''; // Clear sample selection
+        return true;
+    }
+    return false;
+}
 
 // State
 let wasm = null;
@@ -90,8 +183,24 @@ async function init() {
         versionSpan.textContent = `SubsetJuliaVM v${wasm.get_version()}`;
     }
 
-    // Load first sample
-    if (samplesIR.length > 0 && editor) {
+    // Try to restore code from URL hash first
+    const hash = window.location.hash;
+    let restoredFromHash = false;
+
+    if (hash && hash.includes('c=')) {
+        const code = getCodeFromHash();
+        if (code !== null && editor) {
+            editor.setValue(code);
+            sampleSelect.value = ''; // Clear sample selection
+            restoredFromHash = true;
+        } else if (hash.includes('c=')) {
+            // Hash exists but decoding failed - show error
+            showError('Failed to decode shared code from URL. The link may be corrupted.');
+        }
+    }
+
+    // Load first sample only if not restored from hash
+    if (!restoredFromHash && samplesIR.length > 0 && editor) {
         editor.setValue(samplesIR[0].code);
         currentSampleIndex = 0;
     }
@@ -185,6 +294,9 @@ function setupEventListeners() {
     // Run button
     runBtn.addEventListener('click', run);
 
+    // Share URL button
+    shareBtn.addEventListener('click', shareCode);
+
     // Copy source button
     copySourceBtn.addEventListener('click', copySource);
 
@@ -214,6 +326,28 @@ async function copySource() {
         }, 1500);
     } catch (e) {
         console.error('Failed to copy:', e);
+    }
+}
+
+async function shareCode() {
+    if (!editor) return;
+    const code = editor.getValue();
+    if (!code) {
+        showError('No code to share.');
+        return;
+    }
+
+    try {
+        await copyShareUrl(code);
+        shareBtn.textContent = 'Copied!';
+        shareBtn.classList.add('copied');
+        setTimeout(() => {
+            shareBtn.textContent = 'Share URL';
+            shareBtn.classList.remove('copied');
+        }, 1500);
+    } catch (e) {
+        // Show error message with URL if clipboard failed
+        showError(e.message);
     }
 }
 
@@ -285,6 +419,9 @@ async function run() {
 
     const code = editor.getValue();
     const seed = 42;
+
+    // Update URL hash with current code for reproducibility
+    setCodeToHash(code);
 
     // Hide previous errors (but keep output for accumulation)
     hideError();
