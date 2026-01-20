@@ -81,64 +81,64 @@ export function unicode_reverse_lookup(unicode_char: string): string | undefined
 export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembly.Module;
 
 export interface InitOutput {
-  readonly memory: WebAssembly.Memory;
-  readonly get_supported_features: () => any;
-  readonly get_unsupported_features: () => any;
-  readonly get_version: () => [number, number];
-  readonly init: () => void;
-  readonly run_from_source: (a: number, b: number, c: bigint) => any;
-  readonly run_ir_json: (a: number, b: number, c: bigint) => any;
-  readonly run_ir_simple: (a: number, b: number, c: bigint) => number;
-  readonly unicode_completions: (a: number, b: number) => any;
-  readonly unicode_expand: (a: number, b: number) => [number, number];
-  readonly unicode_lookup: (a: number, b: number) => [number, number];
-  readonly unicode_reverse_lookup: (a: number, b: number) => [number, number];
-  readonly compile_and_run: (a: number, b: bigint) => number;
-  readonly compile_and_run_auto: (a: number, b: bigint) => number;
-  readonly compile_and_run_detailed: (a: number, b: bigint) => number;
-  readonly compile_and_run_streaming: (a: number, b: bigint, c: number, d: number) => number;
-  readonly compile_and_run_with_output: (a: number, b: bigint) => number;
-  readonly compile_to_ir: (a: number) => number;
-  readonly free_execution_result: (a: number) => void;
-  readonly free_repl_result: (a: number) => void;
-  readonly free_string: (a: number) => void;
-  readonly is_expression_complete: (a: number) => number;
-  readonly repl_session_eval: (a: number, b: number) => number;
-  readonly repl_session_free: (a: number) => void;
-  readonly repl_session_new: (a: bigint) => number;
-  readonly repl_session_reset: (a: number) => void;
-  readonly run_ir_json_f64: (a: number) => number;
-  readonly run_ir_json_f64_N_seed: (a: number, b: bigint, c: bigint) => number;
-  readonly run_ir_json_f_N_seed: (a: number, b: bigint, c: bigint) => bigint;
-  readonly split_expressions: (a: number) => number;
-  readonly subset_julia_vm_demo: () => void;
-  readonly vm_request_cancel: () => void;
-  readonly vm_reset_cancel: () => void;
-  readonly __wbindgen_free: (a: number, b: number, c: number) => void;
-  readonly __wbindgen_malloc: (a: number, b: number) => number;
-  readonly __wbindgen_realloc: (a: number, b: number, c: number, d: number) => number;
-  readonly __wbindgen_externrefs: WebAssembly.Table;
-  readonly __wbindgen_start: () => void;
+    readonly memory: WebAssembly.Memory;
+    readonly get_supported_features: () => any;
+    readonly get_unsupported_features: () => any;
+    readonly get_version: () => [number, number];
+    readonly run_from_source: (a: number, b: number, c: bigint) => any;
+    readonly run_ir_json: (a: number, b: number, c: bigint) => any;
+    readonly run_ir_simple: (a: number, b: number, c: bigint) => number;
+    readonly unicode_completions: (a: number, b: number) => any;
+    readonly unicode_expand: (a: number, b: number) => [number, number];
+    readonly unicode_lookup: (a: number, b: number) => [number, number];
+    readonly unicode_reverse_lookup: (a: number, b: number) => [number, number];
+    readonly init: () => void;
+    readonly compile_and_run: (a: number, b: bigint) => number;
+    readonly compile_and_run_auto: (a: number, b: bigint) => number;
+    readonly compile_and_run_detailed: (a: number, b: bigint) => number;
+    readonly compile_and_run_streaming: (a: number, b: bigint, c: number, d: number) => number;
+    readonly compile_and_run_with_output: (a: number, b: bigint) => number;
+    readonly compile_to_ir: (a: number) => number;
+    readonly free_string: (a: number) => void;
+    readonly run_ir_json_f64: (a: number) => number;
+    readonly run_ir_json_f64_N_seed: (a: number, b: bigint, c: bigint) => number;
+    readonly run_ir_json_f_N_seed: (a: number, b: bigint, c: bigint) => bigint;
+    readonly vm_request_cancel: () => void;
+    readonly vm_reset_cancel: () => void;
+    readonly free_execution_result: (a: number) => void;
+    readonly free_repl_result: (a: number) => void;
+    readonly is_expression_complete: (a: number) => number;
+    readonly repl_session_eval: (a: number, b: number) => number;
+    readonly repl_session_free: (a: number) => void;
+    readonly repl_session_new: (a: bigint) => number;
+    readonly repl_session_reset: (a: number) => void;
+    readonly split_expressions: (a: number) => number;
+    readonly subset_julia_vm_demo: () => void;
+    readonly __wbindgen_free: (a: number, b: number, c: number) => void;
+    readonly __wbindgen_malloc: (a: number, b: number) => number;
+    readonly __wbindgen_realloc: (a: number, b: number, c: number, d: number) => number;
+    readonly __wbindgen_externrefs: WebAssembly.Table;
+    readonly __wbindgen_start: () => void;
 }
 
 export type SyncInitInput = BufferSource | WebAssembly.Module;
 
 /**
-* Instantiates the given `module`, which can either be bytes or
-* a precompiled `WebAssembly.Module`.
-*
-* @param {{ module: SyncInitInput }} module - Passing `SyncInitInput` directly is deprecated.
-*
-* @returns {InitOutput}
-*/
+ * Instantiates the given `module`, which can either be bytes or
+ * a precompiled `WebAssembly.Module`.
+ *
+ * @param {{ module: SyncInitInput }} module - Passing `SyncInitInput` directly is deprecated.
+ *
+ * @returns {InitOutput}
+ */
 export function initSync(module: { module: SyncInitInput } | SyncInitInput): InitOutput;
 
 /**
-* If `module_or_path` is {RequestInfo} or {URL}, makes a request and
-* for everything else, calls `WebAssembly.instantiate` directly.
-*
-* @param {{ module_or_path: InitInput | Promise<InitInput> }} module_or_path - Passing `InitInput` directly is deprecated.
-*
-* @returns {Promise<InitOutput>}
-*/
+ * If `module_or_path` is {RequestInfo} or {URL}, makes a request and
+ * for everything else, calls `WebAssembly.instantiate` directly.
+ *
+ * @param {{ module_or_path: InitInput | Promise<InitInput> }} module_or_path - Passing `InitInput` directly is deprecated.
+ *
+ * @returns {Promise<InitOutput>}
+ */
 export default function __wbg_init (module_or_path?: { module_or_path: InitInput | Promise<InitInput> } | InitInput | Promise<InitInput>): Promise<InitOutput>;
