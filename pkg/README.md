@@ -68,6 +68,47 @@ cargo run --bin precompile_stdlib --features parser
 wasm-pack build --target web --out-dir ../web/pkg
 ```
 
+### Base キャッシュを埋め込んだ WASM ビルド（初回実行の高速化）
+
+ブラウザでの初回実行時、Base ライブラリを毎回ソースからコンパイルする
+コスト（数百 ms）を回避するため、ホストで事前生成した Base bytecode
+キャッシュ（Issue #2929）を WASM バイナリに埋め込めます。WASM では
+オンディスクの永続キャッシュが使えないため、埋め込み方式が有効です。
+
+ヘルパースクリプトを使う場合（リポジトリルートから）:
+
+```bash
+scripts/wasm_build_with_cache.sh                 # デフォルト: --target web
+scripts/wasm_build_with_cache.sh --target nodejs
+scripts/wasm_build_with_cache.sh --target web --out-dir ../web/pkg
+```
+
+スクリプトを使わない場合の 3 ステップ:
+
+```bash
+# 1. ホスト用 sjulia をビルド
+cargo build --release --bin sjulia --features repl
+
+# 2. Base bytecode キャッシュを生成（target/base_cache.bin が出力される）
+./target/release/sjulia --precompile-base "$(pwd)/target/base_cache.bin"
+
+# 3. キャッシュを埋め込んで wasm-pack でビルド
+cd subset_julia_vm_web
+SJULIA_BASE_CACHE="$(pwd)/../target/base_cache.bin" \
+  wasm-pack build --target web --out-dir ../web/pkg
+```
+
+仕組み: `build.rs` が `SJULIA_BASE_CACHE` を見て `cfg(has_embedded_base_cache)`
+を立て、`embedded_cache.rs` が `include_bytes!` でバイトを焼き込みます。
+ランタイム側の `compile_base_functions()`（`subset_julia_vm/src/compile/cache.rs`）
+が起動時にこの埋め込みキャッシュを最優先で読み出し、Base のコンパイルを
+スキップします。
+
+トレードオフ: 埋め込みキャッシュのサイズ（約 8 MB）が `.wasm` に
+そのまま乗ります。実測で Playground バンドルは約 10.5 MB → 約 18 MB に
+増えます。初回ダウンロードのコストと初回実行のレイテンシのどちらを
+優先するかで使い分けてください。
+
 ## ローカル開発
 
 ### クイックスタート
