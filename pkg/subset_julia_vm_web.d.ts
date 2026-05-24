@@ -93,6 +93,7 @@ export interface InitOutput {
     readonly unicode_lookup: (a: number, b: number) => [number, number];
     readonly unicode_reverse_lookup: (a: number, b: number) => [number, number];
     readonly init: () => void;
+    readonly free_execution_result: (a: number) => void;
     readonly free_repl_result: (a: number) => void;
     readonly is_expression_complete: (a: number) => number;
     readonly repl_session_eval: (a: number, b: number) => number;
@@ -100,8 +101,6 @@ export interface InitOutput {
     readonly repl_session_new: (a: bigint) => number;
     readonly repl_session_reset: (a: number) => void;
     readonly split_expressions: (a: number) => number;
-    readonly compile_and_run_detailed: (a: number, b: bigint) => number;
-    readonly compile_and_run_streaming: (a: number, b: bigint, c: number, d: number) => number;
     readonly compile_and_run: (a: number, b: bigint) => number;
     readonly compile_and_run_auto: (a: number, b: bigint) => number;
     readonly compile_and_run_with_output: (a: number, b: bigint) => number;
@@ -112,8 +111,9 @@ export interface InitOutput {
     readonly run_ir_json_f_N_seed: (a: number, b: bigint, c: bigint) => bigint;
     readonly vm_request_cancel: () => void;
     readonly vm_reset_cancel: () => void;
+    readonly compile_and_run_detailed: (a: number, b: bigint) => number;
+    readonly compile_and_run_streaming: (a: number, b: bigint, c: number, d: number) => number;
     readonly subset_julia_vm_demo: () => void;
-    readonly free_execution_result: (a: number) => void;
     readonly __wbindgen_free: (a: number, b: number, c: number) => void;
     readonly __wbindgen_malloc: (a: number, b: number) => number;
     readonly __wbindgen_realloc: (a: number, b: number, c: number, d: number) => number;

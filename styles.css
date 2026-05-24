@@ -231,6 +231,22 @@ main {
     white-space: pre-wrap;
 }
 
+#plot-output {
+    justify-content: center;
+    align-items: center;
+    padding: 1rem;
+    background: var(--bg-primary);
+}
+
+#plot-output:not(.hidden) {
+    display: flex;
+}
+
+#plot-output svg {
+    max-width: 100%;
+    height: auto;
+}
+
 #result {
     padding: 0.75rem 1rem;
     background: var(--bg-tertiary);

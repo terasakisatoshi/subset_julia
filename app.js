@@ -1,6 +1,6 @@
 // SubsetJuliaVM Playground - Main Application (Monaco Editor version)
 // Uses run_from_source() for native parity - pure Rust parser, no tree-sitter dependency
-import { samplesIR } from './samples_ir.js?v=24';
+import { samplesIR } from './samples_ir.js?v=25';
 import { registerJuliaLanguage, setWasmModule } from './julia-language.js?v=4';
 
 // Elements
@@ -14,6 +14,7 @@ const errorDiv = document.getElementById('error');
 const versionSpan = document.getElementById('version');
 const copyBtn = document.getElementById('copy-btn');
 const clearOutputBtn = document.getElementById('clear-output-btn');
+const plotOutput = document.getElementById('plot-output');
 
 // ============================================================
 // URL Sharing Functions
@@ -306,6 +307,9 @@ function setupEventListeners() {
     // Clear output button
     clearOutputBtn.addEventListener('click', () => {
         output.textContent = '';
+        output.classList.remove('hidden');
+        plotOutput.innerHTML = '';
+        plotOutput.classList.add('hidden');
         result.textContent = '';
         hideError();
     });
@@ -445,15 +449,33 @@ async function run() {
 }
 
 function displayResult(execResult) {
+    // Reset both output areas on every run
+    plotOutput.innerHTML = '';
+    plotOutput.classList.add('hidden');
+    output.textContent = '';
+    output.classList.remove('hidden');
+
     if (execResult.success) {
-        // Accumulate output (like iOS app)
-        if (execResult.output) {
-            output.textContent += execResult.output;
-        }
-        if (execResult.value !== 0 && !isNaN(execResult.value)) {
-            result.textContent = `Result: ${execResult.value}`;
-        } else if (!execResult.output) {
-            result.textContent = 'Completed';
+        if (execResult.svg_artifact) {
+            // Show SVG plot
+            plotOutput.innerHTML = execResult.svg_artifact;
+            plotOutput.classList.remove('hidden');
+            // Also show text output if there is any (e.g. println before plot)
+            if (execResult.output) {
+                output.textContent = execResult.output;
+            } else {
+                output.classList.add('hidden');
+            }
+        } else {
+            // Normal text output
+            if (execResult.output) {
+                output.textContent += execResult.output;
+            }
+            if (execResult.value !== 0 && !isNaN(execResult.value)) {
+                result.textContent = `Result: ${execResult.value}`;
+            } else if (!execResult.output) {
+                result.textContent = 'Completed';
+            }
         }
     } else {
         // Show partial output even on error

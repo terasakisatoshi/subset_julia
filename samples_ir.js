@@ -180,6 +180,16 @@ println("Sum: ", debug_sum(5))`,
 
   // ==================== INTERMEDIATE ====================
   {
+    name: "Plot — sin curve",
+    code: `# Plot the sine function using Plots.jl
+using Plots
+
+# plot(f) samples f over [-5, 5] and draws a line chart
+plot(sin)`,
+    ir: null
+  },
+
+  {
     name: "FizzBuzz",
     code: `function fizzbuzz(n)
     for i in 1:n
