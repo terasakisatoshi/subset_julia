@@ -78,9 +78,9 @@ wasm-pack build --target web --out-dir ../web/pkg
 ヘルパースクリプトを使う場合（リポジトリルートから）:
 
 ```bash
-scripts/wasm_build_with_cache.sh                 # デフォルト: --target web
+scripts/wasm_build_with_cache.sh                                  # デフォルト: --target web
 scripts/wasm_build_with_cache.sh --target nodejs
-scripts/wasm_build_with_cache.sh --target web --out-dir ../web/pkg
+scripts/wasm_build_with_cache.sh --target web --out-dir ./web/pkg
 ```
 
 スクリプトを使わない場合の 3 ステップ:
