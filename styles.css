@@ -80,6 +80,19 @@ main {
     #monaco-container {
         min-height: 50px !important;
     }
+
+    .tutorial-panel {
+        flex-direction: column;
+        gap: 0.75rem;
+    }
+
+    .tutorial-actions {
+        align-items: stretch;
+    }
+
+    .tutorial-actions button {
+        flex: 1;
+    }
 }
 
 .editor-container,
@@ -132,6 +145,119 @@ main {
 
 .toolbar button:disabled {
     opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.tutorial-panel {
+    display: flex;
+    align-items: stretch;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 0.85rem 1rem;
+    background: #24251f;
+    border-bottom: 1px solid #49483e;
+}
+
+.tutorial-main {
+    min-width: 0;
+    flex: 1;
+}
+
+.tutorial-progress {
+    color: var(--accent);
+    font-size: 0.75rem;
+    font-weight: 700;
+    letter-spacing: 0;
+    text-transform: uppercase;
+    margin-bottom: 0.35rem;
+}
+
+.tutorial-panel h2 {
+    font-size: 1rem;
+    line-height: 1.25;
+    margin: 0 0 0.35rem;
+}
+
+.tutorial-panel p {
+    color: var(--text-primary);
+    font-size: 0.875rem;
+    line-height: 1.45;
+    margin: 0.15rem 0;
+}
+
+.tutorial-panel #tutorial-task {
+    color: var(--text-secondary);
+}
+
+.tutorial-checks {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin-top: 0.65rem;
+}
+
+.tutorial-check {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+    min-height: 28px;
+    max-width: 100%;
+    padding: 0.25rem 0.55rem;
+    border: 1px solid #49483e;
+    border-radius: 4px;
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+    font-size: 0.78rem;
+}
+
+.tutorial-check-state {
+    font-weight: 700;
+}
+
+.tutorial-check-pass {
+    border-color: rgba(166, 226, 46, 0.65);
+}
+
+.tutorial-check-pass .tutorial-check-state {
+    color: var(--success);
+}
+
+.tutorial-check-fail {
+    border-color: rgba(249, 38, 114, 0.7);
+}
+
+.tutorial-check-fail .tutorial-check-state {
+    color: var(--error);
+}
+
+.tutorial-check-pending .tutorial-check-state {
+    color: var(--text-secondary);
+}
+
+.tutorial-actions {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.5rem;
+    flex: 0 0 auto;
+}
+
+.tutorial-actions button {
+    min-width: 72px;
+    padding: 0.45rem 0.75rem;
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+    border: 1px solid #49483e;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.8rem;
+}
+
+.tutorial-actions button:hover:not(:disabled) {
+    border-color: var(--accent);
+}
+
+.tutorial-actions button:disabled {
+    opacity: 0.45;
     cursor: not-allowed;
 }
 
@@ -236,15 +362,24 @@ main {
     align-items: center;
     padding: 1rem;
     background: var(--bg-primary);
+    min-height: 450px;
+    width: 100%;
 }
 
 #plot-output:not(.hidden) {
     display: flex;
 }
 
-#plot-output svg {
+#plot-output .plot-container,
+#plot-output .svg-container {
+    width: 100% !important;
+    height: 100% !important;
+}
+
+#plot-output svg.main-svg {
+    width: 100% !important;
+    height: 100% !important;
     max-width: 100%;
-    height: auto;
 }
 
 #result {

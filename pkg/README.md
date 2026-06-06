@@ -1,392 +1,133 @@
 # subset_julia_vm_web
 
-SubsetJuliaVM の WebAssembly バインディング。ブラウザで Julia サブセットコードを実行できる Playground を提供します。
+`subset_julia_vm_web` は SubsetJuliaVM の `wasm-bindgen` ラッパーです。ブラウザ JavaScript から、パーサー、lowering、コンパイラ、VM 実行、plot artifact 取得、Unicode 補助 API を呼び出せるようにします。
 
-## アーキテクチャ
+ブラウザアプリ本体は `../web` にあります。
 
+## 現在のパイプライン
+
+推奨 API は `run_from_source` です。
+
+```text
+Julia source
+  -> subset_julia_vm_parser の Pure Rust parser
+  -> lowering / package loading
+  -> compile_with_cache
+  -> VM
+  -> ExecutionResult
 ```
-┌──────────────────────────────────────────────────────────────────────┐
-│                          Web Browser                                  │
-├──────────────────────────────────────────────────────────────────────┤
-│                                                                       │
-│  ┌─────────────────────┐          ┌─────────────────────────────┐   │
-│  │   Monaco Editor     │          │      Output Panel           │   │
-│  │   (Julia syntax)    │          │  - println() 出力           │   │
-│  └──────────┬──────────┘          │  - 実行結果                 │   │
-│             │                      │  - エラーメッセージ         │   │
-│             ▼                      └──────────────▲──────────────┘   │
-│  ┌──────────────────────┐                        │                   │
-│  │  web-tree-sitter     │                        │                   │
-│  │  (Julia パーサー)     │                        │                   │
-│  └──────────┬───────────┘                        │                   │
-│             │ CST JSON                            │                   │
-│             ▼                                     │                   │
-│  ┌────────────────────────────────────────────────┴──────────────┐   │
-│  │                    subset_julia_vm_web.wasm                    │   │
-│  │   - CST JSON パース                                            │   │
-│  │   - Lowering (CST → Core IR)                                   │   │
-│  │   - Compiler (Core IR → Bytecode)                              │   │
-│  │   - VM (Bytecode 実行)                                         │   │
-│  └───────────────────────────────────────────────────────────────┘   │
-│                                                                       │
-│  ┌───────────────────────────────────────────────────────────────┐   │
-│  │  samples_ir.js (プリコンパイル済み IR JSON)                    │   │
-│  └───────────────────────────────┬───────────────────────────────┘   │
-│                                  ▼                                   │
-│                    subset_julia_vm_web.wasm                           │
-│                    - IR JSON パース → 実行                            │
-└──────────────────────────────────────────────────────────────────────┘
-```
+
+現在の Playground には web-tree-sitter 経路はありません。WASM ビルドも native 実行と同じ Pure Rust parser 経路を使います。`subset_julia_vm` は `default-features = false`、`features = ["wasm"]` でビルドします。
 
 ## ビルド
 
-### 必要なツール
+初回だけ WASM target と `wasm-pack` を入れます。
 
 ```bash
-# WASM ターゲットを追加
 rustup target add wasm32-unknown-unknown
-
-# wasm-pack をインストール
 cargo install wasm-pack
 ```
 
-### Base ライブラリの再生成（Pure Julia 関数追加時）
-
-`subset_julia_vm/src/julia/base/` に Pure Julia で新しい関数を追加した場合、precompiled base.json を再生成する必要があります：
+通常の browser package build:
 
 ```bash
-cd subset_julia_vm
-cargo run --bin precompile_stdlib --features parser
-```
-
-これにより `src/precompiled/base.json` が更新されます。この手順を忘れると、新しい関数が WASM で "Unknown function" エラーになります。
-
-### WASM ビルド
-
-```bash
-# subset_julia_vm_web ディレクトリ内で実行
-wasm-pack build --target web --out-dir ../web/pkg
-```
-
-### Base キャッシュを埋め込んだ WASM ビルド（初回実行の高速化）
-
-ブラウザでの初回実行時、Base ライブラリを毎回ソースからコンパイルする
-コスト（数百 ms）を回避するため、ホストで事前生成した Base bytecode
-キャッシュ（Issue #2929）を WASM バイナリに埋め込めます。WASM では
-オンディスクの永続キャッシュが使えないため、埋め込み方式が有効です。
-
-ヘルパースクリプトを使う場合（リポジトリルートから）:
-
-```bash
-scripts/wasm_build_with_cache.sh                                  # デフォルト: --target web
-scripts/wasm_build_with_cache.sh --target nodejs
-scripts/wasm_build_with_cache.sh --target web --out-dir ./web/pkg
-```
-
-スクリプトを使わない場合の 3 ステップ:
-
-```bash
-# 1. ホスト用 sjulia をビルド
-cargo build --release --bin sjulia --features repl
-
-# 2. Base bytecode キャッシュを生成（target/base_cache.bin が出力される）
-./target/release/sjulia --precompile-base "$(pwd)/target/base_cache.bin"
-
-# 3. キャッシュを埋め込んで wasm-pack でビルド
 cd subset_julia_vm_web
-SJULIA_BASE_CACHE="$(pwd)/../target/base_cache.bin" \
-  wasm-pack build --target web --out-dir ../web/pkg
-```
-
-仕組み: `build.rs` が `SJULIA_BASE_CACHE` を見て `cfg(has_embedded_base_cache)`
-を立て、`embedded_cache.rs` が `include_bytes!` でバイトを焼き込みます。
-ランタイム側の `compile_base_functions()`（`subset_julia_vm/src/compile/cache.rs`）
-が起動時にこの埋め込みキャッシュを最優先で読み出し、Base のコンパイルを
-スキップします。
-
-トレードオフ: 埋め込みキャッシュのサイズ（約 8 MB）が `.wasm` に
-そのまま乗ります。実測で Playground バンドルは約 10.5 MB → 約 18 MB に
-増えます。初回ダウンロードのコストと初回実行のレイテンシのどちらを
-優先するかで使い分けてください。
-
-## ローカル開発
-
-### クイックスタート
-
-```bash
-# subset_julia_vm_web ディレクトリ内で実行
-wasm-pack build --target web --out-dir ../web/pkg && \
-python3 -m http.server 8080 --directory ../web
-```
-
-ブラウザで http://localhost:8080 を開く。
-
-### 開発サーバー（ホットリロードなし）
-
-```bash
-# 1. WASM をビルド (subset_julia_vm_web ディレクトリ内で実行)
 wasm-pack build --target web --out-dir ../web/pkg
-
-# 2. 別ターミナルでサーバー起動
-python3 -m http.server 8080 --directory ../web
 ```
 
-コード変更後は WASM の再ビルドが必要です。
+Base compile と prelude Program 初期化の cold cost を避けたい場合は、リポジトリルートから helper を使います。host 用 `sjulia` をビルドし、Base bytecode cache と prelude Program cache を作り、その cache を WASM artifact に埋め込みます。
 
-## API
+```bash
+scripts/wasm_build_with_cache.sh
+```
 
-### ExecutionResult 型
+`wasm-pack build` の引数は helper にそのまま渡せます。
+
+```bash
+scripts/wasm_build_with_cache.sh --target web --out-dir ./web/pkg
+scripts/wasm_build_with_cache.sh --target nodejs
+```
+
+注意: この helper は Base bytecode cache と parsed/lowered prelude Program cache を埋め込みます。`run_from_source` の初回には、user source の parser/lowering、embedded Base cache deserialize/restore、user program compile がまだ残ります。Playground では startup 時の warmup でこの cold path を先に通します。
+
+## ローカル確認
+
+ビルド後:
+
+```bash
+cd web
+python3 server.py
+```
+
+`http://localhost:8080` を開きます。
+
+Rust 側の web binding test:
+
+```bash
+timeout 1800 cargo nextest run --release -p subset_julia_vm_web
+```
+
+## JavaScript API
+
+### `run_from_source(source, seed)`
+
+Julia source をフルパイプラインで実行します。Playground はこの API を使います。
+
+```javascript
+import init, { run_from_source } from './pkg/subset_julia_vm_web.js';
+
+await init();
+const result = run_from_source('using Plots\nplot(sin)\n', BigInt(42));
+```
+
+### `run_ir_json(irJson, seed)`
+
+serialized Core IR JSON を実行します。古い sample/test 経路との互換用です。この入口では plot artifact を抽出しません。Playground と同じ挙動が必要なら `run_from_source` を使います。
+
+### `run_ir_simple(irJson, seed)`
+
+serialized Core IR JSON を実行して、数値だけを `number` で返します。エラー時は `NaN` です。
+
+### metadata / Unicode helper
+
+```javascript
+get_version();
+get_supported_features();
+get_unsupported_features();
+
+unicode_lookup('\\alpha');
+unicode_reverse_lookup('α');
+unicode_completions('\\alp');
+unicode_expand('f(\\alpha, \\beta)');
+```
+
+## ExecutionResult
+
+`run_from_source` と `run_ir_json` は Rust から serialize された JS object を返します。
 
 ```typescript
 interface ExecutionResult {
-    success: boolean;      // 実行が成功したかどうか
-    value: number;         // 数値結果 (f64)
-    output: string;        // println() 等の出力
-    error_message: string | null;  // エラーメッセージ (成功時は null)
+  success: boolean;
+  value: number;
+  output: string;
+  error_message: string | null;
+  artifact_mime: string | null;
+  artifact_data: string | null;
 }
 ```
 
-### `run_ir_json(ir_json: string, seed: number): ExecutionResult`
+plot の場合、`run_from_source` は次を返します。
 
-IR JSON を受け取り、コンパイル・実行して結果を返す。
-
-```javascript
-import init, { run_ir_json } from './pkg/subset_julia_vm_web.js';
-
-await init();
-const result = run_ir_json(irJsonString, 42);
-console.log(result);
-// { success: true, value: 3.14, output: "Hello, World!\n", error_message: null }
+```text
+artifact_mime = "application/vnd.plotly+json"
+artifact_data = { traces, layout } を持つ JSON string
 ```
 
-### `run_ir_simple(ir_json: string, seed: number): number`
+この artifact を Plotly.js で描画する責任は host page 側にあります。
 
-IR JSON を受け取り、数値結果のみを返す。エラー時は NaN を返す。
+## 実装メモ
 
-```javascript
-import { run_ir_simple } from './pkg/subset_julia_vm_web.js';
-const value = run_ir_simple(irJsonString, 42);
-console.log(value); // 3.14
-```
-
-### `get_version(): string`
-
-SubsetJuliaVM のバージョンを返す。
-
-```javascript
-import { get_version } from './pkg/subset_julia_vm_web.js';
-console.log(get_version()); // "0.1.0"
-```
-
-### `get_supported_features(): string[]`
-
-サポートされている機能の一覧を返す。
-
-```javascript
-import { get_supported_features } from './pkg/subset_julia_vm_web.js';
-console.log(get_supported_features());
-// ["functions", "loops (for, while)", "conditionals (if/else)", "arrays (1D, 2D)",
-//  "complex numbers", "structs", "modules", "try/catch/finally", "lambdas",
-//  "higher-order functions (map, filter, reduce)", "broadcast operations (.*. .+)",
-//  "random numbers (rand)", "math functions (sin, cos, sqrt, etc.)"]
-```
-
-### `get_unsupported_features(): string[]`
-
-未サポートの機能の一覧を返す。
-
-```javascript
-import { get_unsupported_features } from './pkg/subset_julia_vm_web.js';
-console.log(get_unsupported_features());
-// ["using/import", "macro definitions", "eval()", "@generated", "C extensions"]
-```
-
-### Unicode 入力支援
-
-Monaco Editor の補完機能で `\` をトリガーにし、カーソル直前の LaTeX 風プレフィックスを
-WASM API の `unicode_completions(prefix)` に渡して候補を取得します。
-WASM 側は `subset_julia_vm::unicode` の対応表から prefix 一致の候補を返し、補完確定時に
-Unicode 文字へ置換します（例: `\alpha` → `α`）。
-
-## 設計上の注意
-
-### パーサーの分離
-
-tree-sitter は C 言語実装を含むため、Rust→WASM コンパイルで ABI 非互換性問題があります。
-そのため、パーサーは JS 側で web-tree-sitter を使用し、CST を JSON 化して WASM に渡します。
-WASM 側で CST JSON を Lowering して Core IR を生成し、実行します。
-
-```
-Julia ソース → [JS: web-tree-sitter] → CST JSON → [WASM: JsonLowering] → Core IR → 実行結果
-```
-
-### 2つの実行モード
-
-Playground は2つのモードでコードを実行します：
-
-1. **プリコンパイル済みサンプル**: `samples_ir.js` に事前コンパイルされた IR を使用（高速）
-2. **カスタムコード**: web-tree-sitter でパースし、CST JSON を WASM 側で Lowering
-
-```javascript
-// app.js での判定ロジック
-if (sample && sample.ir) {
-    // プリコンパイル済み IR を使用
-    wasm.run_ir_json(sample.ir, seed);
-} else if (parser) {
-    // tree-sitter でパース → CST JSON を WASM へ
-    const tree = parser.parse(code);
-    const cstJson = serializeCst(tree.rootNode, code);
-    wasm.run_from_cst_json(cstJson, code, seed);
-}
-```
-
-### 機能フラグ
-
-`subset_julia_vm` クレートの `parser` 機能を無効化して依存し、WASM 向けの機能を有効化：
-
-```toml
-[dependencies.subset_julia_vm]
-path = "../subset_julia_vm"
-default-features = false
-features = ["wasm"]
-```
-
-### getrandom 依存関係について
-
-`Cargo.toml` で `getrandom` を明示的に依存関係として追加していますが、このクレート内では直接使用していません。
-
-**依存関係のチェーン:**
-```
-subset_julia_vm_web
-  └── subset_julia_vm
-      └── astro-float
-          └── astro-float-num
-              └── rand
-                  └── rand_core
-                      └── getrandom
-```
-
-**明示的に追加する理由:**
-
-`getrandom` は間接的な依存関係として必要ですが、WASM 環境で正しく動作させるためには `features = ["js"]` を有効化する必要があります。間接依存だけでは、WASM ビルド時に JavaScript の `crypto.getRandomValues()` を使用する機能が有効にならない可能性があります。
-
-```toml
-getrandom = { version = "0.2", features = ["js"] }
-```
-
-この設定により、WASM 環境でランダム数生成が正しく動作します。削除すると、`astro-float` が使用する `rand` クレートが WASM 環境で正しく機能しなくなる可能性があります。
-
-## サンプルコードの更新
-
-### samples_ir.js の構造
-
-`../web/samples_ir.js` にはプリコンパイル済みサンプルが含まれています：
-
-```javascript
-{
-    name: "Sample Name",
-    code: `...Julia code...`,
-    ir: `...IR JSON...`  // null の場合は JS lowering を使用
-}
-```
-
-### IR JSON の生成方法
-
-#### 方法1: Rust テストを使用
-
-`subset_julia_vm/tests/` でテストを実行し、IR を出力：
-
-```bash
-cd subset_julia_vm
-
-# テストコードに一時的に追加
-# println!("{}", subset_julia_vm::compile_to_ir_str(code).unwrap());
-cargo test -- --nocapture
-```
-
-#### 方法2: 簡単なスクリプトを作成
-
-`subset_julia_vm/examples/gen_ir.rs` を作成：
-
-```rust
-use subset_julia_vm::compile_to_ir_str;
-
-fn main() {
-    let code = r#"
-function factorial(n)
-    if n <= 1
-        return 1
-    end
-    n * factorial(n - 1)
-end
-
-factorial(10)
-"#;
-
-    if let Some(ir) = compile_to_ir_str(code) {
-        println!("{}", ir);
-    }
-}
-```
-
-実行：
-
-```bash
-cd subset_julia_vm
-cargo run --example gen_ir --features parser
-```
-
-#### 方法3: `ir: null` を使用（WASM 側 lowering）
-
-新機能がまだ Rust parser でサポートされていない場合、`ir: null` を設定すると web-tree-sitter でパースした CST を JSON 化して WASM に渡し、WASM 側で Lowering します：
-
-```javascript
-{
-    name: "New Sample",
-    code: `@time some_function()`,
-    ir: null  // CST JSON を WASM 側で Lowering
-}
-```
-
-### 更新手順
-
-1. **新しいサンプルを追加する場合**:
-   ```bash
-   # 1. コードを書いてテスト
-   cd subset_julia_vm && cargo test
-
-   # 2. IR を生成
-   cargo run --example gen_ir --features parser
-
-   # 3. samples_ir.js に追加
-   ```
-
-2. **既存サンプルを更新する場合**:
-   - `code` を更新
-   - 上記の方法で新しい IR を生成
-   - `ir` フィールドを置き換え
-
-3. **キャッシュ対策**:
-   `app.js` のインポートバージョンを更新：
-   ```javascript
-   import { samplesIR } from './samples_ir.js?v=18';  // バージョンを上げる
-   ```
-
-### 注意事項
-
-- `samples.js` は現在使用されていません（`samples_ir.js` のみ使用）
-- `ir: null` のサンプルは実行が若干遅くなります（WASM 側で Lowering を行うため）
-- IR JSON は1行に圧縮されるため、可読性は低いですが問題ありません
-
-## 関連ファイル
-
-| ファイル | 説明 |
-|----------|------|
-| `src/lib.rs` | wasm-bindgen エクスポート (WASM API) |
-| `../web/index.html` | Playground HTML (Monaco Editor 読み込み) |
-| `../web/app.js` | メインアプリケーション (実行制御) |
-| `../web/lowering.js` | CST → Core IR 変換 (JavaScript 実装, 現在は未使用) |
-| `../web/julia-language.js` | Monaco Editor 用 Julia 言語定義 |
-| `../web/samples_ir.js` | プリコンパイル済みサンプルコード |
-| `../web/tree-sitter-julia.wasm` | Julia パーサー (web-tree-sitter 用) |
-| `../web/styles.css` | Playground スタイルシート |
+- `src/lib.rs` が web app 向けの唯一の wasm-bindgen surface です。
+- `run_from_source` は `compile_with_cache` を使います。繰り返し実行や Playground の startup warmup で、compiled Base / program state を再利用できます。`scripts/wasm_build_with_cache.sh` で作った artifact は prelude Program も埋め込むため、WASM 初回実行で prelude source を parse/lower しません。
+- `getrandom = { features = ["js"] }` は意図的な直接依存です。間接的な RNG 利用が WASM 上で browser の `crypto.getRandomValues()` を使うために必要です。
+- `../web/pkg` は `wasm-pack` の生成物です。手編集せず、再ビルドしてください。

@@ -1,174 +1,140 @@
-# subset_julia_vm_web
+# Web Playground
 
-SubsetJuliaVM の WebAssembly バインディング。ブラウザで Julia サブセットコードを実行できる Playground を提供します。
+`web/` は SubsetJuliaVM の静的ブラウザ Playground です。`web/pkg` の WASM package を読み込み、Monaco で Julia source を編集し、`run_from_source` で実行し、VM が返した Plotly artifact を描画します。
 
-## アーキテクチャ
+## ファイル
 
-```
-┌──────────────────────────────────────────────────────────────────────┐
-│                          Web Browser                                  │
-├──────────────────────────────────────────────────────────────────────┤
-│                                                                       │
-│  ┌─────────────────────┐          ┌─────────────────────────────┐   │
-│  │   Monaco Editor     │          │      Output Panel           │   │
-│  │   (Julia syntax)    │          │  - println() 出力           │   │
-│  └──────────┬──────────┘          │  - 実行結果                 │   │
-│             │ Julia Source         │  - エラーメッセージ         │   │
-│             ▼                      └──────────────▲──────────────┘   │
-│  ┌────────────────────────────────────────────────┴──────────────┐   │
-│  │                    subset_julia_vm_web.wasm                    │   │
-│  │   - Pure Rust Parser (ネイティブと同一)                        │   │
-│  │   - Lowering (CST → Core IR)                                   │   │
-│  │   - Compiler (Core IR → Bytecode)                              │   │
-│  │   - VM (Bytecode 実行)                                         │   │
-│  └───────────────────────────────────────────────────────────────┘   │
-│                                                                       │
-└──────────────────────────────────────────────────────────────────────┘
+```text
+web/
+  index.html          page shell と script 読み込み順
+  app.js              Playground state、Run、Share、出力描画
+  julia-language.js   Monaco Julia syntax と Unicode 補完
+  samples_ir.js       sample source。名前は historical
+  styles.css          layout / theme
+  plotly.min.js       2D/3D plot 用の local Plotly bundle
+  server.py           WASM MIME type 対応の local static server
+  test.html           browser sample runner
+  test-runner.js      test.html 用 Playwright wrapper
+  pkg/                wasm-pack 生成物
 ```
 
-### Native と WASM の同一パイプライン
+Rust や WASM API を変更したら `pkg/` を再生成します。
 
-`run_from_source()` を使用することで、WASM とネイティブ実行で同一の実行パイプラインを使用：
+## ビルドと起動
 
-```
-Julia Source → Pure Rust Parser → JsonLowering → Compiler → VM → Result
-```
-
-これにより:
-- **完全な動作の一致**: ネイティブとWASMで同じ結果が保証される
-- **シンプルな構成**: web-tree-sitter 不要、JavaScript 側のパース処理不要
-- **高速な起動**: tree-sitter WASM のロード時間が不要
-
-## ビルド
-
-### 必要なツール
+リポジトリルートから:
 
 ```bash
-# WASM ターゲットを追加
-rustup target add wasm32-unknown-unknown
-
-# wasm-pack をインストール
-cargo install wasm-pack
+scripts/wasm_build_with_cache.sh
+cd web
+python3 server.py
 ```
 
-### WASM ビルド
+起動後:
+
+```text
+http://localhost:8080
+```
+
+Base cache を埋め込まない通常 build:
 
 ```bash
-# subset_julia_vm_web ディレクトリ内で実行
+cd subset_julia_vm_web
 wasm-pack build --target web --out-dir ../web/pkg
+cd ../web
+python3 server.py
 ```
 
-## ローカル開発
+## 実行時の挙動
 
-### クイックスタート
-
-```bash
-# subset_julia_vm_web ディレクトリ内で実行
-wasm-pack build --target web --out-dir ../web/pkg && \
-python3 -m http.server 8080 --directory ../web
-```
-
-ブラウザで http://localhost:8080 を開く。
-
-### 開発サーバー（ホットリロードなし）
-
-```bash
-# 1. WASM をビルド (subset_julia_vm_web ディレクトリ内で実行)
-wasm-pack build --target web --out-dir ../web/pkg
-
-# 2. 別ターミナルでサーバー起動
-python3 -m http.server 8080 --directory ../web
-```
-
-## API
-
-### `run_from_source(source: string, seed: bigint): ExecutionResult`
-
-Julia ソースコードを直接実行します。Pure Rust パーサーを使用し、ネイティブと同一のパイプラインで実行されます。
+Playground は editor 内容を常に次で実行します。
 
 ```javascript
-const result = wasm.run_from_source('println("Hello, World!")', BigInt(42));
-console.log(result.output);  // "Hello, World!\n"
-console.log(result.success); // true
+wasm.run_from_source(code, BigInt(42));
 ```
 
-### `run_ir_json(ir_json: string, seed: bigint): ExecutionResult`
+結果は text output、numeric result、error、または Plotly graph として表示します。`using Plots; plot(sin)` は `artifact_mime = "application/vnd.plotly+json"` を返し、`plotly.min.js` で描画されます。
 
-プリコンパイル済み IR JSON を実行します（高速起動が必要な場合）。
+startup 後、`app.js` は warmup として次を一度実行します。warmup が終わるまで Run button は無効です。
 
-### ExecutionResult
+```julia
+using Plots
+plot(sin)
+```
 
-```typescript
-interface ExecutionResult {
-    success: boolean;
-    value: number;
-    output: string;
-    error_message?: string;
+これは初回の user plot 実行と同じ WASM compile path を温めるためです。画面の出力は更新しません。
+
+## Samples
+
+sample は `samples_ir.js` に定義します。
+
+```javascript
+{
+  name: "Plot - sin curve",
+  code: `using Plots
+plot(sin)`,
+  ir: null
 }
 ```
 
-## Unicode 補完 API
+Playground は `code` field を使います。`ir` field は古い test path との互換用なので、通常は `null` のままにします。
 
-LaTeX 記号の Unicode 変換をサポートしています。
-
-```javascript
-// LaTeX → Unicode
-wasm.unicode_lookup("\\alpha")  // "α"
-
-// Unicode → LaTeX
-wasm.unicode_reverse_lookup("α")  // "\\alpha"
-
-// プレフィックスで補完候補を取得
-wasm.unicode_completions("\\alp")  // [["\\alpha", "α"], ["\\Alpha", "Α"]]
-
-// 文字列内の LaTeX をすべて展開
-wasm.unicode_expand("f(\\alpha, \\beta)")  // "f(α, β)"
-```
-
-## ファイル構成
-
-```
-web/
-├── index.html              # メインページ
-├── app.js                  # アプリケーション（run_from_source を使用）
-├── julia-language.js       # Monaco Editor の Julia 言語定義
-├── samples_ir.js           # サンプルコード（プリコンパイル IR 付き）
-├── styles.css              # スタイル
-└── pkg/                    # wasm-pack で生成（要ビルド）
-    ├── subset_julia_vm_web.js
-    ├── subset_julia_vm_web_bg.wasm
-    └── ...
-```
-
-## サンプルの追加方法
-
-`samples_ir.js` にサンプルを追加：
+チュートリアル lesson は同じ配列に `tutorial` metadata を足します。実行後の軽い達成判定は browser 側で `success`、stdout の部分一致、または Plotly artifact の有無を見ます。
 
 ```javascript
-export const samplesIR = [
-    {
-        name: "Hello World",
-        code: `println("Hello, World!")`,
-        // ir は不要（run_from_source で直接実行）
-    },
-    // ...
-];
+{
+  name: "Tutorial 1 - Values and output",
+  code: `x = 41
+println("x + 1 = ", x + 1)`,
+  ir: null,
+  tutorial: {
+    lesson: 1,
+    title: "Values and output",
+    concept: "Names bind values, and println writes each result to stdout.",
+    task: "Change x and run the code.",
+    checks: [{ label: "prints the computed expression", outputIncludes: "x + 1 = 42" }]
+  }
+}
 ```
 
-## トラブルシューティング
+`samples_ir.js` を変更したら、`app.js` の import query を上げます。
 
-### WASM モジュールがロードされない
+```javascript
+import { samplesIR } from './samples_ir.js?v=27';
+```
+
+## Plotly
+
+plot 描画は local file の `plotly.min.js` に依存します。CDN に依存しないことと、Monaco の AMD loader が Plotly の UMD registration を横取りしないことが目的です。
+
+Plotly version を変える場合:
+
+1. `web/plotly.min.js` を置き換える。
+2. `index.html` の `plotly.min.js?v=...` query を更新する。
+3. browser で `using Plots; plot(sin)` と 3D sample を確認する。
+
+## 検証
+
+Rust 側の WASM binding test:
 
 ```bash
-# 1. WASM を再ビルド
-cd subset_julia_vm_web
-wasm-pack build --target web --out-dir ../web/pkg
-
-# 2. ブラウザのキャッシュをクリア
-# 3. ページをリロード
+timeout 1800 cargo nextest run --release -p subset_julia_vm_web
 ```
 
-### パースエラーが発生する
+browser sample runner:
 
-Pure Rust パーサー（subset_julia_vm_parser）でサポートされていない構文の可能性があります。
-サポートされている構文は `subset_julia_vm_parser/src/` を参照してください。
+```bash
+cd web
+python3 server.py
+node test-runner.js --server-url=http://localhost:8080
+```
+
+Playwright runner にはローカル環境で使える browser installation が必要です。
+
+## よくある失敗
+
+`WASM module not loaded` は `web/pkg` がない、または古い状態です。`wasm-pack` で再ビルドします。
+
+`Plotly.js not loaded` は `app.js` が artifact を描画する前に `plotly.min.js` が実行されていない状態です。`index.html` の script order と browser console を確認します。
+
+初回実行が遅い場合は、embedded Base cache が使われていないか、startup warmup がまだ終わっていない可能性があります。`scripts/wasm_build_with_cache.sh` は Base compile cost を避けるための helper で、`run_from_source` の cold path 全体を単独で消すものではありません。

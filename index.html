@@ -7,7 +7,8 @@
     <link rel="icon" type="image/png" sizes="32x32" href="favicon-32x32.png">
     <link rel="icon" type="image/png" sizes="16x16" href="favicon-16x16.png">
     <link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png">
-    <link rel="stylesheet" href="styles.css">
+    <link rel="preload" href="plotly.min.js?v=2.35.2" as="script">
+    <link rel="stylesheet" href="styles.css?v=2">
     <script src="https://cdn.jsdelivr.net/npm/split.js@1.6.5/dist/split.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/lz-string@1.5.0/libs/lz-string.min.js"></script>
 </head>
@@ -26,6 +27,19 @@
                 <button id="run-btn" class="primary">Run</button>
                 <button id="share-btn">Share URL</button>
                 <button id="copy-source-btn">Copy</button>
+            </div>
+            <div id="tutorial-panel" class="tutorial-panel hidden" aria-live="polite">
+                <div class="tutorial-main">
+                    <div id="tutorial-progress" class="tutorial-progress"></div>
+                    <h2 id="tutorial-title"></h2>
+                    <p id="tutorial-concept"></p>
+                    <p id="tutorial-task"></p>
+                    <div id="tutorial-checks" class="tutorial-checks"></div>
+                </div>
+                <div class="tutorial-actions">
+                    <button id="tutorial-prev-btn" title="Previous tutorial">Prev</button>
+                    <button id="tutorial-next-btn" title="Next tutorial">Next</button>
+                </div>
             </div>
             <div class="editor-wrapper">
                 <div id="monaco-container"></div>
@@ -53,7 +67,8 @@
         </p>
     </footer>
 
+    <script src="plotly.min.js?v=2.35.2"></script>
     <script src="https://cdn.jsdelivr.net/npm/monaco-editor@0.45.0/min/vs/loader.js"></script>
-    <script type="module" src="app.js?v=51"></script>
+    <script type="module" src="app.js?v=56"></script>
 </body>
 </html>

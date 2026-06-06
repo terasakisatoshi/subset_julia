@@ -3,6 +3,121 @@
 // Synced from iOS app (SubsetJuliaVMApp) - Beginner, Intermediate, and Advanced samples
 
 export const samplesIR = [
+  // ==================== TUTORIAL ====================
+  {
+    name: "Tutorial 1 - Values and output",
+    code: `x = 41
+println("x = ", x)
+println("x + 1 = ", x + 1)`,
+    ir: null,
+    tutorial: {
+      lesson: 1,
+      title: "Values and output",
+      concept: "Names bind values, and println writes each result to stdout.",
+      task: "Change x, run the code, and watch the second line update from the expression.",
+      checks: [
+        {
+          label: "prints the computed expression",
+          outputIncludes: "x + 1 = 42"
+        }
+      ]
+    }
+  },
+  {
+    name: "Tutorial 2 - Functions",
+    code: `function square(x)
+    x * x
+end
+
+answer = square(6)
+println("square(6) = ", answer)`,
+    ir: null,
+    tutorial: {
+      lesson: 2,
+      title: "Functions",
+      concept: "A function returns the value of its final expression when return is omitted.",
+      task: "Run the function, then try a different argument to see the result change.",
+      checks: [
+        {
+          label: "evaluates square(6)",
+          outputIncludes: "square(6) = 36"
+        }
+      ]
+    }
+  },
+  {
+    name: "Tutorial 3 - Arrays and loops",
+    code: `values = [1, 2, 3, 4, 5]
+
+function sum_values(xs)
+    total = 0
+    for value in xs
+        total += value
+    end
+    total
+end
+
+total = sum_values(values)
+println("sum = ", total)`,
+    ir: null,
+    tutorial: {
+      lesson: 3,
+      title: "Arrays and loops",
+      concept: "Arrays keep ordered values, and for loops visit each element in order.",
+      task: "Run the loop, then add another value to the array and update the expected sum.",
+      checks: [
+        {
+          label: "sums the vector",
+          outputIncludes: "sum = 15"
+        }
+      ]
+    }
+  },
+  {
+    name: "Tutorial 4 - Multiple dispatch",
+    code: `describe(x::Int64) = "integer $(x)"
+describe(x::String) = "string $(x)"
+
+println(describe(7))
+println(describe("Julia"))`,
+    ir: null,
+    tutorial: {
+      lesson: 4,
+      title: "Multiple dispatch",
+      concept: "Julia selects a method from the runtime argument types.",
+      task: "Run both calls, then add another method for Float64.",
+      checks: [
+        {
+          label: "uses the Int64 method",
+          outputIncludes: "integer 7"
+        },
+        {
+          label: "uses the String method",
+          outputIncludes: "string Julia"
+        }
+      ]
+    }
+  },
+  {
+    name: "Tutorial 5 - Plotting",
+    code: `using Plots
+
+plot(sin)`,
+    ir: null,
+    tutorial: {
+      lesson: 5,
+      title: "Plotting",
+      concept: "The WASM runner returns plot artifacts, and the playground renders them with Plotly.",
+      task: "Run the sample, then replace sin with cos or add plot!(cos).",
+      checks: [
+        {
+          label: "renders a Plotly artifact",
+          artifactMime: "application/vnd.plotly+json"
+        }
+      ]
+    }
+  },
+
   // ==================== BEGINNER ====================
   {
     name: "Hello World",
@@ -186,6 +301,39 @@ using Plots
 
 # plot(f) samples f over [-5, 5] and draws a line chart
 plot(sin)`,
+    ir: null
+  },
+
+  {
+    name: "Plotting (2D)",
+    code: `# 2D plotting with Plots.jl — plots render interactively via Plotly.
+using Plots
+
+# plot(f) draws a function over its default domain.
+plot(sin)
+
+# plot! mutates the current plot, overlaying another series.
+plot!(cos)
+
+# Broadcast over a range to build coordinates, then scatter! adds markers.
+t = 0:0.1:2π
+scatter!(cos.(t), sin.(t))`,
+    ir: null
+  },
+
+  {
+    name: "Plotting (3D)",
+    code: `# 3D plotting with Plots.jl — 3D plots render interactively via Plotly.
+using Plots
+
+# A helix: plot!(x, y, z) draws a 3D line (path3d).
+# With no current plot, plot! starts a new one.
+t = 0:0.1:2π
+plot!(cos.(t), sin.(t), t)
+
+# scatter!(x, y, z) overlays 3D markers (scatter3d) on the same axes.
+t = 0:0.5:2π
+scatter!(cos.(t), sin.(t), t)`,
     ir: null
   },
 
@@ -1086,11 +1234,19 @@ println(result)`,
   {
     name: "Dice Simulation",
     code: `
+function integer_floor(x)
+    result = 0
+    while result + 1 <= x
+        result += 1
+    end
+    result
+end
+
 function simulate_dice(n_rolls)
     rolls = rand(n_rolls)
     sum = 0
     for i in 1:n_rolls
-        die = 1 + floor(rolls[i] * 6)
+        die = 1 + integer_floor(rolls[i] * 6)
         if die > 6
             die = 6
         end

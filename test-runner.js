@@ -12,11 +12,13 @@
  *   npx playwright test-runner.js
  */
 
-const { chromium } = require('playwright');
+import { chromium } from 'playwright';
 
 const SERVER_URL = process.argv.find(a => a.startsWith('--server-url='))?.split('=')[1]
     || process.env.SERVER_URL
     || 'http://localhost:8080';
+const READY_TIMEOUT_MS = Number(process.env.WEB_TEST_READY_TIMEOUT_MS || 180000);
+const RUN_TIMEOUT_MS = Number(process.env.WEB_TEST_RUN_TIMEOUT_MS || 900000);
 
 async function runTests() {
     console.log('SubsetJuliaVM Web Test Runner');
@@ -42,7 +44,7 @@ async function runTests() {
         await page.waitForFunction(() => {
             const status = document.getElementById('status');
             return status && status.textContent === 'Ready';
-        }, { timeout: 30000 });
+        }, undefined, { timeout: READY_TIMEOUT_MS });
 
         console.log('Running tests...\n');
 
@@ -53,7 +55,7 @@ async function runTests() {
         await page.waitForFunction(() => {
             const status = document.getElementById('status');
             return status && status.textContent === 'Done';
-        }, { timeout: 120000 });
+        }, undefined, { timeout: RUN_TIMEOUT_MS });
 
         // Get results
         const results = await page.evaluate(() => {

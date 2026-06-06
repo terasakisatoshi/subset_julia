@@ -1,6 +1,6 @@
 // SubsetJuliaVM Playground - Main Application (Monaco Editor version)
 // Uses run_from_source() for native parity - pure Rust parser, no tree-sitter dependency
-import { samplesIR } from './samples_ir.js?v=25';
+import { samplesIR } from './samples_ir.js?v=27';
 import { registerJuliaLanguage, setWasmModule } from './julia-language.js?v=4';
 
 // Elements
@@ -15,6 +15,14 @@ const versionSpan = document.getElementById('version');
 const copyBtn = document.getElementById('copy-btn');
 const clearOutputBtn = document.getElementById('clear-output-btn');
 const plotOutput = document.getElementById('plot-output');
+const tutorialPanel = document.getElementById('tutorial-panel');
+const tutorialProgress = document.getElementById('tutorial-progress');
+const tutorialTitle = document.getElementById('tutorial-title');
+const tutorialConcept = document.getElementById('tutorial-concept');
+const tutorialTask = document.getElementById('tutorial-task');
+const tutorialChecks = document.getElementById('tutorial-checks');
+const tutorialPrevBtn = document.getElementById('tutorial-prev-btn');
+const tutorialNextBtn = document.getElementById('tutorial-next-btn');
 
 // ============================================================
 // URL Sharing Functions
@@ -103,6 +111,8 @@ function restoreCodeFromHash() {
     if (code !== null && editor) {
         editor.setValue(code);
         sampleSelect.value = ''; // Clear sample selection
+        currentSampleIndex = -1;
+        renderTutorialPanel(null);
         return true;
     }
     return false;
@@ -111,7 +121,14 @@ function restoreCodeFromHash() {
 // State
 let wasm = null;
 let editor = null;
-let currentSampleIndex = 0;
+let currentSampleIndex = -1;
+let warmupPromise = null;
+let warmupHandle = null;
+let warmupHandleType = null;
+let warmupScheduled = false;
+const tutorialSampleIndexes = samplesIR
+    .map((sample, idx) => sample.tutorial ? idx : -1)
+    .filter((idx) => idx >= 0);
 
 // Detect macOS
 const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
@@ -148,7 +165,8 @@ function initSplit() {
 // Initialize the application
 async function init() {
     // Set button text with platform-appropriate shortcut
-    runBtn.textContent = runButtonText;
+    runBtn.disabled = true;
+    runBtn.textContent = 'Loading...';
 
     // Initialize Split.js
     initSplit();
@@ -193,6 +211,8 @@ async function init() {
         if (code !== null && editor) {
             editor.setValue(code);
             sampleSelect.value = ''; // Clear sample selection
+            currentSampleIndex = -1;
+            renderTutorialPanel(null);
             restoredFromHash = true;
         } else if (hash.includes('c=')) {
             // Hash exists but decoding failed - show error
@@ -202,8 +222,16 @@ async function init() {
 
     // Load first sample only if not restored from hash
     if (!restoredFromHash && samplesIR.length > 0 && editor) {
-        editor.setValue(samplesIR[0].code);
-        currentSampleIndex = 0;
+        loadSample(0);
+    } else if (restoredFromHash) {
+        renderTutorialPanel(null);
+    }
+
+    runBtn.disabled = false;
+    runBtn.textContent = runButtonText;
+
+    if (wasm) {
+        scheduleWarmup();
     }
 }
 
@@ -273,22 +301,51 @@ async function loadMonaco() {
 }
 
 function populateSamples() {
+    const tutorialGroup = document.createElement('optgroup');
+    tutorialGroup.label = 'Tutorial';
+    const sampleGroup = document.createElement('optgroup');
+    sampleGroup.label = 'Samples';
+
     samplesIR.forEach((sample, idx) => {
         const option = document.createElement('option');
         option.value = idx;
         option.textContent = sample.name;
-        sampleSelect.appendChild(option);
+        if (sample.tutorial) {
+            tutorialGroup.appendChild(option);
+        } else {
+            sampleGroup.appendChild(option);
+        }
     });
+
+    if (tutorialGroup.children.length > 0) {
+        sampleSelect.appendChild(tutorialGroup);
+    }
+    if (sampleGroup.children.length > 0) {
+        sampleSelect.appendChild(sampleGroup);
+    }
+}
+
+function loadSample(idx) {
+    const sample = samplesIR[idx];
+    if (!sample || !editor) return;
+
+    editor.setValue(sample.code);
+    currentSampleIndex = idx;
+    sampleSelect.value = String(idx);
+    hideError();
+    result.textContent = '';
+    renderTutorialPanel(sample);
 }
 
 function setupEventListeners() {
     // Sample selection
     sampleSelect.addEventListener('change', (e) => {
         const idx = parseInt(e.target.value);
-        if (!isNaN(idx) && samplesIR[idx] && editor) {
-            editor.setValue(samplesIR[idx].code);
-            currentSampleIndex = idx;
-            hideError();
+        if (!isNaN(idx)) {
+            loadSample(idx);
+        } else {
+            currentSampleIndex = -1;
+            renderTutorialPanel(null);
         }
     });
 
@@ -308,10 +365,28 @@ function setupEventListeners() {
     clearOutputBtn.addEventListener('click', () => {
         output.textContent = '';
         output.classList.remove('hidden');
+        if (typeof Plotly !== 'undefined') {
+            try { Plotly.purge(plotOutput); } catch (_) {}
+        }
         plotOutput.innerHTML = '';
         plotOutput.classList.add('hidden');
         result.textContent = '';
         hideError();
+        renderTutorialPanel(samplesIR[currentSampleIndex]);
+    });
+
+    tutorialPrevBtn.addEventListener('click', () => {
+        const tutorialPos = tutorialSampleIndexes.indexOf(currentSampleIndex);
+        if (tutorialPos > 0) {
+            loadSample(tutorialSampleIndexes[tutorialPos - 1]);
+        }
+    });
+
+    tutorialNextBtn.addEventListener('click', () => {
+        const tutorialPos = tutorialSampleIndexes.indexOf(currentSampleIndex);
+        if (tutorialPos >= 0 && tutorialPos < tutorialSampleIndexes.length - 1) {
+            loadSample(tutorialSampleIndexes[tutorialPos + 1]);
+        }
     });
 }
 
@@ -410,6 +485,78 @@ async function loadWasm() {
     }
 }
 
+function renderTutorialPanel(sample, evaluatedChecks = null) {
+    if (!sample || !sample.tutorial) {
+        tutorialPanel.classList.add('hidden');
+        tutorialChecks.innerHTML = '';
+        tutorialPrevBtn.disabled = true;
+        tutorialNextBtn.disabled = true;
+        return;
+    }
+
+    const tutorial = sample.tutorial;
+    const tutorialPos = tutorialSampleIndexes.indexOf(currentSampleIndex);
+    tutorialPanel.classList.remove('hidden');
+    tutorialProgress.textContent = `Lesson ${tutorial.lesson} of ${tutorialSampleIndexes.length}`;
+    tutorialTitle.textContent = tutorial.title;
+    tutorialConcept.textContent = tutorial.concept;
+    tutorialTask.textContent = tutorial.task;
+
+    tutorialChecks.innerHTML = '';
+    const checks = evaluatedChecks || tutorial.checks.map((check) => ({
+        ...check,
+        state: 'pending'
+    }));
+
+    checks.forEach((check) => {
+        const row = document.createElement('div');
+        row.className = `tutorial-check tutorial-check-${check.state}`;
+
+        const state = document.createElement('span');
+        state.className = 'tutorial-check-state';
+        state.textContent = check.state === 'pass'
+            ? 'Pass'
+            : check.state === 'fail'
+                ? 'Fail'
+                : 'Pending';
+
+        const label = document.createElement('span');
+        label.className = 'tutorial-check-label';
+        label.textContent = check.label;
+
+        row.appendChild(state);
+        row.appendChild(label);
+        tutorialChecks.appendChild(row);
+    });
+
+    tutorialPrevBtn.disabled = tutorialPos <= 0;
+    tutorialNextBtn.disabled = tutorialPos < 0 || tutorialPos >= tutorialSampleIndexes.length - 1;
+}
+
+function evaluateTutorialChecks(execResult) {
+    const sample = samplesIR[currentSampleIndex];
+    if (!sample || !sample.tutorial) return;
+
+    const checks = sample.tutorial.checks.map((check) => {
+        let passed = Boolean(execResult.success);
+        if (passed && check.outputIncludes) {
+            passed = (execResult.output || '').includes(check.outputIncludes);
+        }
+        if (passed && check.artifactMime) {
+            passed = execResult.artifact_mime === check.artifactMime && Boolean(execResult.artifact_data);
+        }
+        if (passed && Object.prototype.hasOwnProperty.call(check, 'value')) {
+            passed = execResult.value === check.value;
+        }
+        return {
+            ...check,
+            state: passed ? 'pass' : 'fail'
+        };
+    });
+
+    renderTutorialPanel(sample, checks);
+}
+
 async function run() {
     if (!wasm) {
         showError('WASM module not loaded. Build it first with wasm-pack.');
@@ -423,6 +570,8 @@ async function run() {
 
     const code = editor.getValue();
     const seed = 42;
+
+    cancelScheduledWarmup();
 
     // Update URL hash with current code for reproducibility
     setCodeToHash(code);
@@ -439,16 +588,25 @@ async function run() {
         // Use run_from_source for all code (native parity - uses pure Rust parser)
         console.log('Executing with run_from_source (native parity)...');
         const execResult = wasm.run_from_source(code, BigInt(seed));
-        displayResult(execResult);
+        await displayResult(execResult);
+        evaluateTutorialChecks(execResult);
     } catch (e) {
         showError(e.message || 'Execution failed');
+        evaluateTutorialChecks({
+            success: false,
+            output: '',
+            artifact_mime: '',
+            artifact_data: '',
+            value: NaN
+        });
     } finally {
         runBtn.disabled = false;
         runBtn.textContent = runButtonText;
+        scheduleWarmup();
     }
 }
 
-function displayResult(execResult) {
+async function displayResult(execResult) {
     // Reset both output areas on every run
     plotOutput.innerHTML = '';
     plotOutput.classList.add('hidden');
@@ -456,11 +614,30 @@ function displayResult(execResult) {
     output.classList.remove('hidden');
 
     if (execResult.success) {
-        if (execResult.svg_artifact) {
-            // Show SVG plot
-            plotOutput.innerHTML = execResult.svg_artifact;
+        const mime = execResult.artifact_mime;
+        const data = execResult.artifact_data;
+        if (mime === 'application/vnd.plotly+json' && data) {
+            // Plotly plot (2D and 3D both render through Plotly — Issue #5283).
             plotOutput.classList.remove('hidden');
-            // Also show text output if there is any (e.g. println before plot)
+            plotOutput.style.height = '450px';
+            try {
+                const parsed = JSON.parse(data);
+                if (typeof Plotly !== 'undefined') {
+                    const traces = parsed.traces || [];
+                    const layout = themedPlotlyLayout(parsed.layout || {});
+                    await Plotly.newPlot(plotOutput, traces, layout, { responsive: true });
+                    Plotly.Plots.resize(plotOutput);
+                    if (plotOutput.children.length === 0) {
+                        plotOutput.textContent = '[Plotly rendered no visible output]';
+                    } else {
+                        result.textContent = 'Rendered plot';
+                    }
+                } else {
+                    plotOutput.textContent = '[Plotly.js not loaded - cannot render plot]';
+                }
+            } catch (e) {
+                plotOutput.textContent = `[Plotly render error: ${e.message}]`;
+            }
             if (execResult.output) {
                 output.textContent = execResult.output;
             } else {
@@ -484,6 +661,101 @@ function displayResult(execResult) {
         }
         showError(execResult.error_message || 'Execution failed');
     }
+}
+
+function themedPlotlyLayout(layout) {
+    const themed = {
+        ...layout,
+        paper_bgcolor: layout.paper_bgcolor || '#1e1f1c',
+        plot_bgcolor: layout.plot_bgcolor || '#272822',
+        font: { color: '#f8f8f2', ...(layout.font || {}) },
+        margin: { l: 48, r: 20, t: 24, b: 48, ...(layout.margin || {}) }
+    };
+
+    themed.xaxis = themedAxis(layout.xaxis);
+    themed.yaxis = themedAxis(layout.yaxis);
+    if (layout.scene) {
+        themed.scene = {
+            ...layout.scene,
+            xaxis: themedAxis(layout.scene.xaxis),
+            yaxis: themedAxis(layout.scene.yaxis),
+            zaxis: themedAxis(layout.scene.zaxis)
+        };
+    }
+    return themed;
+}
+
+function themedAxis(axis = {}) {
+    return {
+        ...axis,
+        color: axis.color || '#f8f8f2',
+        gridcolor: axis.gridcolor || '#4a4a40',
+        zerolinecolor: axis.zerolinecolor || '#75715e',
+        linecolor: axis.linecolor || '#75715e'
+    };
+}
+
+function warmupWasm() {
+    if (!wasm) {
+        return Promise.resolve();
+    }
+    if (warmupPromise) {
+        return warmupPromise;
+    }
+    warmupPromise = new Promise((resolve) => {
+        try {
+            // Warm the same web execution path used by the first plot run (Issue #6022).
+            wasm.run_from_source('using Plots\nplot(sin)\n', BigInt(42));
+            console.log('WASM plot warmup completed');
+        } catch (e) {
+            console.warn('WASM plot warmup failed:', e);
+        } finally {
+            resolve();
+        }
+    });
+
+    return warmupPromise;
+}
+
+function scheduleWarmup() {
+    if (!wasm || warmupPromise || warmupScheduled) {
+        return;
+    }
+
+    warmupScheduled = true;
+    const startWarmup = () => {
+        warmupHandle = null;
+        warmupHandleType = null;
+        warmupScheduled = false;
+        warmupWasm();
+    };
+
+    warmupHandle = window.setTimeout(() => {
+        warmupHandle = null;
+        warmupHandleType = null;
+        if ('requestIdleCallback' in window) {
+            warmupHandle = window.requestIdleCallback(startWarmup, { timeout: 3000 });
+            warmupHandleType = 'idle';
+        } else {
+            startWarmup();
+        }
+    }, 2000);
+    warmupHandleType = 'timeout';
+}
+
+function cancelScheduledWarmup() {
+    if (!warmupScheduled || warmupHandle === null) {
+        return;
+    }
+
+    if (warmupHandleType === 'idle' && 'cancelIdleCallback' in window) {
+        window.cancelIdleCallback(warmupHandle);
+    } else {
+        window.clearTimeout(warmupHandle);
+    }
+    warmupHandle = null;
+    warmupHandleType = null;
+    warmupScheduled = false;
 }
 
 function showError(message) {
