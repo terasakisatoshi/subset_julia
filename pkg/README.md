@@ -21,34 +21,25 @@ Julia source
 
 ## ビルド
 
-初回だけ WASM target と `wasm-pack` を入れます。
+Playground 用の WASM package を作る通常手順はこれだけです。この README は
+`subset_julia_vm_web/` にあるため、まずリポジトリルートへ戻って helper を実行します。
 
 ```bash
-rustup target add wasm32-unknown-unknown
-cargo install wasm-pack
-```
-
-通常の browser package build:
-
-```bash
-cd subset_julia_vm_web
-wasm-pack build --target web --profile web-release --out-dir ../web/pkg
-```
-
-Base compile と prelude Program 初期化の cold cost を避けたい場合は、リポジトリルートから helper を使います。host 用 `sjulia` をビルドし、Base bytecode cache と prelude Program cache を作り、その cache を WASM artifact に埋め込みます。
-
-```bash
-scripts/wasm_build_with_cache.sh
-```
-
-`wasm-pack build` の引数は helper にそのまま渡せます。
-
-```bash
+cd ../
 scripts/wasm_build_with_cache.sh --target web --out-dir ./web/pkg
-scripts/wasm_build_with_cache.sh --target nodejs
 ```
 
-注意: この helper は Base bytecode cache と parsed/lowered prelude Program cache を埋め込みます。`run_from_source` の初回には、user source の parser/lowering、embedded Base cache deserialize/restore、user program compile がまだ残ります。Playground では Run button を有効化する前の startup warmup でこの cold path を先に通します (Issue #6127)。
+出力先は `web/pkg` です。すでにリポジトリルートにいる場合は、`cd ../` は不要です。
+
+この helper は host 用 `sjulia` をビルドし、Base bytecode cache と parsed/lowered
+prelude Program cache を作成または再利用してから、cache を埋め込んだ WASM artifact
+を `wasm-pack` で生成します。`wasm-pack` が未インストールの場合は
+`cargo install wasm-pack` が必要です。
+
+注意: 埋め込まれるのは Base bytecode cache と prelude Program cache です。
+`run_from_source` の初回には user source の parser/lowering、embedded Base cache
+deserialize/restore、user program compile がまだ残ります。Playground では Run button
+を有効化する前の startup warmup でこの cold path を先に通します (Issue #6127)。
 
 ## ローカル確認
 
