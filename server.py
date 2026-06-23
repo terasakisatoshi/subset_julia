@@ -18,6 +18,7 @@ class WasmHandler(http.server.SimpleHTTPRequestHandler):
     }
 
 if __name__ == '__main__':
+    socketserver.TCPServer.allow_reuse_address = True
     with socketserver.TCPServer(("", PORT), WasmHandler) as httpd:
         print(f"Serving at http://localhost:{PORT}")
         httpd.serve_forever()

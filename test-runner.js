@@ -25,7 +25,7 @@ async function runTests() {
     console.log('========================\n');
     console.log(`Server URL: ${SERVER_URL}\n`);
 
-    const browser = await chromium.launch({ headless: true });
+    const browser = await chromium.launch({ channel: 'chrome', headless: true });
     const page = await browser.newPage();
 
     // Collect console logs
@@ -65,7 +65,8 @@ async function runTests() {
             items.forEach((item, idx) => {
                 const name = item.querySelector('.name').textContent;
                 const status = item.classList.contains('pass') ? 'pass' :
-                              item.classList.contains('fail') ? 'fail' : 'unknown';
+                              item.classList.contains('fail') ? 'fail' :
+                              item.classList.contains('skip') ? 'skip' : 'unknown';
                 const error = item.querySelector('.error')?.textContent || null;
 
                 results.push({ idx, name, status, error });
@@ -77,10 +78,13 @@ async function runTests() {
         // Print results
         let passed = 0;
         let failed = 0;
+        let skipped = 0;
 
         for (const result of results) {
-            const icon = result.status === 'pass' ? '✓' : '✗';
-            const color = result.status === 'pass' ? '\x1b[32m' : '\x1b[31m';
+            const icon = result.status === 'pass' ? '✓' :
+                         result.status === 'skip' ? '⊘' : '✗';
+            const color = result.status === 'pass' ? '\x1b[32m' :
+                          result.status === 'skip' ? '\x1b[90m' : '\x1b[31m';
             const reset = '\x1b[0m';
 
             console.log(`${color}${icon}${reset} ${result.name}`);
@@ -90,12 +94,13 @@ async function runTests() {
             }
 
             if (result.status === 'pass') passed++;
+            else if (result.status === 'skip') skipped++;
             else failed++;
         }
 
         // Summary
         console.log('\n========================');
-        console.log(`Results: ${passed} passed, ${failed} failed, ${results.length} total`);
+        console.log(`Results: ${passed} passed, ${skipped} skipped, ${failed} failed, ${results.length} total`);
 
         await browser.close();
 

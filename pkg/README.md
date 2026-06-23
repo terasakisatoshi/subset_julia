@@ -32,7 +32,7 @@ cargo install wasm-pack
 
 ```bash
 cd subset_julia_vm_web
-wasm-pack build --target web --out-dir ../web/pkg
+wasm-pack build --target web --profile web-release --out-dir ../web/pkg
 ```
 
 Base compile と prelude Program 初期化の cold cost を避けたい場合は、リポジトリルートから helper を使います。host 用 `sjulia` をビルドし、Base bytecode cache と prelude Program cache を作り、その cache を WASM artifact に埋め込みます。
@@ -48,7 +48,7 @@ scripts/wasm_build_with_cache.sh --target web --out-dir ./web/pkg
 scripts/wasm_build_with_cache.sh --target nodejs
 ```
 
-注意: この helper は Base bytecode cache と parsed/lowered prelude Program cache を埋め込みます。`run_from_source` の初回には、user source の parser/lowering、embedded Base cache deserialize/restore、user program compile がまだ残ります。Playground では startup 時の warmup でこの cold path を先に通します。
+注意: この helper は Base bytecode cache と parsed/lowered prelude Program cache を埋め込みます。`run_from_source` の初回には、user source の parser/lowering、embedded Base cache deserialize/restore、user program compile がまだ残ります。Playground では Run button を有効化する前の startup warmup でこの cold path を先に通します (Issue #6127)。
 
 ## ローカル確認
 
