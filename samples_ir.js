@@ -182,6 +182,118 @@ scatter!(cos.(t), sin.(t), t)
     webUnsupported: false
   },
   {
+    id: "ordinarydiffeq_linear_ode",
+    name: "OrdinaryDiffEq Linear ODE",
+    category: "Visualization",
+    description: "Solve the OrdinaryDiffEq README linear ODE sample and overlay the analytical solution",
+    difficulty: "Intermediate",
+    tags: ["ordinarydiffeq","ode","plots","plotly","rk4","package"],
+    folder: "intermediate",
+    code: `# OrdinaryDiffEq README linear ODE sample, rendered with Plots/Plotly.
+using OrdinaryDiffEq
+
+f(u, p, t) = 1.01 * u
+u0 = 1 / 2
+tspan = (0.0, 1.0)
+prob = ODEProblem(f, u0, tspan)
+sol = solve(prob, Tsit5(), dt=0.1, reltol=1e-8, abstol=1e-8)
+
+using Plots
+plot(sol, linewidth=5, title="Solution to the linear ODE with a thick line",
+     xaxis="Time (t)", yaxis="u(t)", label="My Thick Line!")
+plot!(sol.t, t -> 0.5 * exp(1.01 * t), lw=3, ls=:dash, label="True Solution!")
+`,
+    ir: null,
+    webUnsupported: false
+  },
+  {
+    id: "ordinarydiffeq_lorenz_attractor",
+    name: "OrdinaryDiffEq Lorenz Attractor",
+    category: "Visualization",
+    description: "Solve the OrdinaryDiffEq README Lorenz system and render the trajectory as a 3D Plotly path",
+    difficulty: "Intermediate",
+    tags: ["ordinarydiffeq","lorenz","ode","plots","plotly","3d","package"],
+    folder: "intermediate",
+    code: `# OrdinaryDiffEq README Lorenz sample, rendered as a 3D Plotly path.
+using OrdinaryDiffEq
+
+function lorenz!(du, u, p, t)
+    du[1] = 10.0 * (u[2] - u[1])
+    du[2] = u[1] * (28.0 - u[3]) - u[2]
+    du[3] = u[1] * u[2] - (8 / 3) * u[3]
+end
+
+u0 = [1.0, 0.0, 0.0]
+tspan = (0.0, 20.0)
+prob = ODEProblem(lorenz!, u0, tspan)
+sol = solve(prob, Tsit5(), dt=0.02, saveat=0.02)
+
+using Plots
+plot(sol, idxs=(1, 2, 3), title="Lorenz attractor")
+`,
+    ir: null,
+    webUnsupported: false
+  },
+  {
+    id: "plots_torus",
+    name: "Torus (Plots.jl)",
+    category: "Visualization",
+    description: "Draw a torus as a wireframe of meridian and longitude rings with plot3d/plot3d!",
+    difficulty: "Intermediate",
+    tags: ["plots","plot3d","torus","wireframe","3d","parametric","visualization"],
+    folder: "intermediate",
+    code: `# Torus visualization with Plots.jl — rendered interactively via Plotly.
+# A torus is a closed surface, so it cannot be written as z = f(x, y).
+# Instead we draw it as a wireframe: rings around the tube (meridians) plus
+# rings around the hole (longitudes), overlaid with plot3d!.
+using Plots
+
+R = 2.0   # distance from the center of the tube to the center of the torus
+r = 0.7   # radius of the tube
+
+# Parametric torus:
+#   x = (R + r*cos(v)) * cos(u)
+#   y = (R + r*cos(v)) * sin(u)
+#   z =  r*sin(v)
+# u sweeps around the hole, v sweeps around the tube.
+
+# Bind the ranges to variables before the for-heads: an inline integer-start,
+# float-step range in a for-head currently iterates zero times (Issue #7800),
+# so we iterate over bound range variables instead.
+us = 0:(2π/24):2π      # samples around the hole
+vs = 0:(2π/24):2π      # samples around the tube
+uring = 0:(2π/12):2π   # 13 meridian rings
+vring = 0:(2π/12):2π   # 13 longitude rings
+
+# Meridian rings: fix u, sweep v (small circles around the tube).
+first = true
+for u in uring
+    x = (R .+ r .* cos.(vs)) .* cos(u)
+    y = (R .+ r .* cos.(vs)) .* sin(u)
+    z = r .* sin.(vs)
+    if first
+        plot3d(x, y, z; title="Torus (Plots.jl)")
+        global first = false
+    else
+        plot3d!(x, y, z)
+    end
+end
+
+# Longitude rings: fix v, sweep u (large circles around the hole).
+for v in vring
+    x = (R + r * cos(v)) .* cos.(us)
+    y = (R + r * cos(v)) .* sin.(us)
+    z = fill(r * sin(v), length(us))
+    plot3d!(x, y, z)
+end
+
+# Return the assembled figure so the host renders it.
+current()
+`,
+    ir: null,
+    webUnsupported: false
+  },
+  {
     id: "sinc_surface",
     name: "Sinc Surface",
     category: "Visualization",
@@ -339,56 +451,92 @@ gif(anim)
     webUnsupported: false
   },
   {
-    id: "barnsley_fern",
-    name: "Barnsley Fern",
+    id: "ifs_fractals",
+    name: "Interactive fractals (@manipulate)",
     category: "Visualization",
-    description: "Draw the Barnsley fern with an iterated function system (chaos game), choosing maps with a Categorical distribution, and a scatter plot",
+    description: "Pick an iterated function system (Barnsley fern, Sierpinski triangle, Heighway dragon) from a dropdown and draw it with the chaos game — Interact's @manipulate combines the per-choice scatter plots into one Plotly figure",
     difficulty: "Intermediate",
-    tags: ["plot","scatter","fractal","ifs","random","struct","distributions","categorical"],
+    tags: ["interact","manipulate","dropdown","plot","scatter","fractal","ifs","random","distributions","categorical"],
     folder: "intermediate",
-    code: `# Barnsley fern — an iterated function system (IFS) drawn with the chaos game.
-# Each step picks one of four affine maps at random; the orbit fills out a fern.
-using Plots
-using Distributions
-using Random
+    code: `# Interactive fractal explorer — pick an iterated function system (IFS) from the
+# dropdown and watch the chaos game fill out a different fractal. Each fractal is
+# a set of affine maps x -> W*x + b applied at random; Interact.jl's @manipulate
+# (MVP) evaluates the body once per choice and combines the per-choice scatter
+# plots into ONE static Plotly figure with a dropdown.
+using Interact, Plots, Distributions, Random
 
-Random.seed!(42)
-
+# Each affine map is x -> W*x + b on a 2-vector. We store the six coefficients
+# as PLAIN SCALARS and apply them with scalar arithmetic (returning a tuple),
+# instead of building 2x2 \`Matrix{Float64}\` / \`Vector{Float64}\` and calling the
+# generic \`W * x + b\`. The chaos game runs this map 5000x per fractal; the
+# generic small matrix*vector path allocates a fresh array each step and is ~10x
+# slower in the VM (Issue #7949), so the scalar form cuts the whole sample from
+# ~3.2s to ~0.8s with byte-identical output. This is an INTERIM hand-unroll: the
+# clean fix is StaticArrays \`SMatrix*SVector\` once its arithmetic lands (Issue
+# #7461). (a*x1 + b*x2 + e, c*x1 + d*x2 + f) is W*x + b written out.
 struct Affine
-    W::Matrix{Float64}
-    b::Vector{Float64}
+    a::Float64
+    b::Float64
+    c::Float64
+    d::Float64
+    e::Float64
+    f::Float64
 end
 
-(a::Affine)(x) = a.W * x + a.b
+(m::Affine)(x1, x2) = (m.a * x1 + m.b * x2 + m.e, m.c * x1 + m.d * x2 + m.f)
 
-# IFS maps: each transforms x -> W*x + b. The 2x2 coefficient matrices are
-# written as ordinary matrix literals [a b; c d]; a space-separated negative
-# entry such as \`0.20 -0.26\` is a single element, not a subtraction (Issue #7196).
-maps = (
-    Affine([0.0 0.0; 0.0 0.16], [0.0, 0.0]),         # stem          (prob 0.01)
-    Affine([0.85 0.04; -0.04 0.85], [0.0, 1.6]),     # leaflets      (prob 0.85)
-    Affine([0.20 -0.26; 0.23 0.22], [0.0, 1.6]),     # left leaflet  (prob 0.07)
-    Affine([-0.15 0.28; 0.26 0.24], [0.0, 0.44]),    # right leaflet (prob 0.07)
-)
-
-# Pick which map to apply each step from a Categorical distribution over the four
-# maps' selection probabilities; rand(picker) returns an index in 1:4.
-picker = Categorical([0.01, 0.85, 0.07, 0.07])
-
-n = 5000
-xs = zeros(n)
-ys = zeros(n)
-p = [0.0, 0.0]
-
-for i in 1:n
-    idx = rand(picker)
-    p = maps[idx](p)
-    xs[i] = p[1]
-    ys[i] = p[2]
+# Each fractal's maps and Categorical \`picker\` are bound DIRECTLY inside the
+# @manipulate body's if/elseif (not looked up from a Dict/function): routing a
+# Distribution through a function return or struct field currently breaks \`rand\`
+# dispatch (Issue #7901), and a tuple \`a, b = f(x)\` inside a @manipulate body
+# fails to lower (Issue #7900). Direct local bindings sidestep both and keep each
+# fractal's definition in one readable place. For the same #7900 reason the loop
+# reads the returned tuple via \`q[1]\`/\`q[2]\` rather than destructuring.
+@manipulate for fractal = [:fern, :sierpinski, :dragon]
+    Random.seed!(42)
+    if fractal == :fern
+        # Barnsley fern: coefficients (a, b, c, d, e, f) for x -> W*x + b.
+        maps = (
+            Affine(0.0, 0.0, 0.0, 0.16, 0.0, 0.0),
+            Affine(0.85, 0.04, -0.04, 0.85, 0.0, 1.6),
+            Affine(0.20, -0.26, 0.23, 0.22, 0.0, 1.6),
+            Affine(-0.15, 0.28, 0.26, 0.24, 0.0, 0.44),
+        )
+        picker = Categorical([0.01, 0.85, 0.07, 0.07])
+        ttl = "Barnsley Fern"
+    elseif fractal == :sierpinski
+        # Sierpinski triangle: shrink by 1/2 toward one of three vertices, equal odds.
+        maps = (
+            Affine(0.5, 0.0, 0.0, 0.5, 0.0, 0.0),
+            Affine(0.5, 0.0, 0.0, 0.5, 1.0, 0.0),
+            Affine(0.5, 0.0, 0.0, 0.5, 0.5, 0.866),
+        )
+        picker = Categorical([1/3, 1/3, 1/3])
+        ttl = "Sierpinski Triangle"
+    else
+        # Heighway dragon: two rotate-and-scale maps, equal odds.
+        maps = (
+            Affine(0.5, -0.5, 0.5, 0.5, 0.0, 0.0),
+            Affine(-0.5, -0.5, 0.5, -0.5, 1.0, 0.0),
+        )
+        picker = Categorical([0.5, 0.5])
+        ttl = "Heighway Dragon"
+    end
+    n = 5000
+    xs = zeros(n)
+    ys = zeros(n)
+    x1 = 0.0
+    x2 = 0.0
+    for i in 1:n
+        idx = rand(picker)
+        q = maps[idx](x1, x2)
+        x1 = q[1]
+        x2 = q[2]
+        xs[i] = x1
+        ys[i] = x2
+    end
+    scatter(xs, ys; aspect_ratio = :equal, title = ttl)
 end
-
-# scatter renders discrete markers; aspect_ratio=:equal keeps the fern undistorted.
-scatter(xs, ys; aspect_ratio = :equal, title = "Barnsley Fern")
 `,
     ir: null,
     webUnsupported: false
@@ -838,6 +986,90 @@ html(b)
     webUnsupported: false
   },
   {
+    id: "jsxgraph_lissajous_3d",
+    name: "JSXGraph Lissajous 3D",
+    category: "Visualization",
+    description: "Render a 3D Lissajous curve with JSXGraph.jl view3d and curve3d",
+    difficulty: "Intermediate",
+    tags: ["jsxgraph","3d","lissajous","curve3d","visualization","interactive"],
+    folder: "intermediate",
+    code: `# 3D Lissajous curve rendered with JSXGraph.jl.
+# Raw JavaScript coordinate expressions are carried as JSFunction values in the
+# application/vnd.jsxgraph+json artifact, then evaluated by the frontend renderer.
+using JSXGraph
+
+b = board(; xlim=(-5, 5), ylim=(-5, 5), axis=false, grid=false,
+          showNavigation=true, showCopyright=false)
+
+v = view3d([-4.0, -3.0], [8.0, 8.0],
+           Any[Any[-2.0, 2.0], Any[-2.0, 2.0], Any[-2.0, 2.0]];
+           xPlaneRear=true, yPlaneRear=true, zPlaneRear=true)
+
+curve = curve3d(
+    "1.8*Math.sin(3*t + Math.PI/2)",
+    "1.8*Math.sin(4*t)",
+    "1.8*Math.sin(5*t)",
+    [0.0, 2*pi];
+    strokeColor="#00d1b2",
+    strokeWidth=3
+)
+
+push!(v, curve)
+push!(b, v)
+html(b)
+`,
+    ir: null,
+    webUnsupported: false
+  },
+  {
+    id: "jsxgraph_torus",
+    name: "JSXGraph Torus",
+    category: "Visualization",
+    description: "Render a torus surface with JSXGraph.jl view3d and parametricsurface3d",
+    difficulty: "Intermediate",
+    tags: ["jsxgraph","3d","torus","parametricsurface3d","surface","visualization","interactive"],
+    folder: "intermediate",
+    code: `# Torus surface rendered with JSXGraph.jl, following the parametricsurface3d
+# example from the JSXGraph documentation.
+# The coordinate maps FX(u,v), FY(u,v), FZ(u,v) are raw JavaScript expressions
+# in u and v, carried as two-argument JSFunction values in the
+# application/vnd.jsxgraph+json artifact and evaluated by the frontend renderer.
+using JSXGraph
+
+b = board(; xlim=(-5, 5), ylim=(-5, 5), axis=false, grid=false,
+          showNavigation=true, showCopyright=false)
+
+v = view3d([-4.0, -3.0], [8.0, 8.0],
+           Any[Any[-4.0, 4.0], Any[-4.0, 4.0], Any[-2.0, 2.0]];
+           xPlaneRear=true, yPlaneRear=true, zPlaneRear=true)
+
+# Parametric torus with major radius R = 2.5 and minor (tube) radius r = 1:
+#   x = (R + r*cos(v)) * cos(u)
+#   y = (R + r*cos(v)) * sin(u)
+#   z =  r*sin(v)
+# u sweeps around the central hole, v sweeps around the tube.
+torus = parametricsurface3d(
+    "(2.5 + Math.cos(v)) * Math.cos(u)",
+    "(2.5 + Math.cos(v)) * Math.sin(u)",
+    "Math.sin(v)",
+    [0.0, 2*pi],   # range of u
+    [0.0, 2*pi];   # range of v
+    strokeColor="#3e8ed0",
+    strokeWidth=1,
+    fillColor="#00d1b2",
+    fillOpacity=0.85,
+    stepsU=40,
+    stepsV=24
+)
+
+push!(v, torus)
+push!(b, v)
+html(b)
+`,
+    ir: null,
+    webUnsupported: false
+  },
+  {
     id: "mandelbrot_set",
     name: "Mandelbrot Set",
     category: "Algorithms",
@@ -1160,34 +1392,40 @@ true
     id: "distributions_package",
     name: "Distributions.jl",
     category: "Mathematics",
-    description: "Probability distributions: properties, random sampling, and maximum-likelihood fitting with Distributions.jl",
+    description: "Probability distributions: pdf/cdf/quantile, truncation, sampling, fitting, and a StatsPlots pdf curve",
     difficulty: "Advanced",
-    tags: ["distributions","normal","binomial","pdf","cdf","rand","fit","package"],
+    tags: ["distributions","normal","binomial","pdf","cdf","rand","fit","truncated","statsplots","package"],
     folder: "advanced",
-    code: `# Distributions.jl — probability distributions, sampling, and fitting.
+    code: `# Distributions.jl — probability distributions, plotting, sampling, and fitting.
 using Distributions
+using StatsPlots
 using Random
 
 # Deterministic output for a reproducible demo.
 Random.seed!(42)
 
 # Continuous univariate distribution: Normal(μ, σ).
-d = Normal(2.0, 3.0)
-println("Distribution: ", d)
-println("mean(d)      = ", mean(d))
-println("var(d)       = ", var(d))
-println("std(d)       = ", std(d))
-println("median(d)    = ", median(d))
-println("params(d)    = ", params(d))
+n = Normal(2.0, 3.0)
+println("Normal mean/std = ", mean(n), " / ", std(n))
+println("pdf(Normal, 2)  = ", pdf(n, 2.0))
+println("cdf(Normal, 2)  = ", cdf(n, 2.0))
+println("q95(Normal)     = ", quantile(n, 0.95))
 
-# Evaluate probability functions.
-x = 2.0
-println("pdf(d, ", x, ")  = ", pdf(d, x))
-println("cdf(d, ", x, ")  = ", cdf(d, x))
-println("quantile(d, 0.95) = ", quantile(d, 0.95))
+# Truncated distributions keep the same API on a bounded support.
+tn = truncated(Normal(), -1.0, 1.0)
+println("truncated support = [", minimum(tn), ", ", maximum(tn), "]")
+println("truncated median  = ", quantile(tn, 0.5))
+
+# Discrete distributions: classical and recently added examples.
+b = Binomial(10, 0.3)
+pb = PoissonBinomial([0.2, 0.5, 0.8])
+sk = Skellam(4.0, 1.5)
+println("Binomial pmf/cdf at 3 = ", pdf(b, 3), " / ", cdf(b, 3))
+println("PoissonBinomial mean  = ", mean(pb), ", pmf(2) = ", pdf(pb, 2))
+println("Skellam mean/var      = ", mean(sk), " / ", var(sk))
 
 # Draw samples and compute empirical statistics.
-samples = [rand(d) for _ in 1:1000]
+samples = [rand(n) for _ in 1:1000]
 empirical_mean = sum(samples) / length(samples)
 empirical_var = sum((s - empirical_mean)^2 for s in samples) / (length(samples) - 1)
 println("empirical mean ≈ ", empirical_mean)
@@ -1195,15 +1433,11 @@ println("empirical var  ≈ ", empirical_var)
 
 # Fit a distribution to observed data.
 data = [1.0, 2.0, 3.0, 4.0, 5.0]
-fit_d = fit(Normal, data)
-println("fit(Normal, data) = ", fit_d)
-println("mean(fit_d)       = ", mean(fit_d))
-println("std(fit_d)        = ", std(fit_d))
+fit_d = fit_mle(Normal, data)
+println("fit_mle mean/std = ", mean(fit_d), " / ", std(fit_d))
 
-# Discrete distribution example.
-b = Binomial(10, 0.3)
-println("Binomial(10, 0.3) pmf at 3 = ", pdf(b, 3))
-println("Binomial(10, 0.3) cdf at 3 = ", cdf(b, 3))
+# StatsPlots renders a pdf curve for a distribution.
+plot(Normal(); title = "Standard Normal pdf")
 `,
     ir: null,
     webUnsupported: false

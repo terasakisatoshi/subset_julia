@@ -1,5 +1,5 @@
 // SubsetJuliaVM Playground - Mobile-first web playground
-import { samplesIR } from './samples_ir.js?v=1';
+import { samplesIR } from './samples_ir.js?v=2';
 import { registerJuliaLanguage, setWasmModule } from './julia-language.js?v=1';
 
 // DOM Elements
@@ -80,7 +80,7 @@ async function copyShareUrl(code) {
             throw new Error(`Could not copy automatically. URL: ${url}`);
         } finally {
             document.body.removeChild(textArea);
-        }
+        };
         return url;
     }
 }
@@ -550,21 +550,35 @@ function renderJsxgraph(data) {
         const board = JXG.JSXGraph.initBoard('jxgbox', options);
         const created = {};
 
-        const resolveParent = (p) => {
+        const resolveSpecValue = (p) => {
             if (p !== null && typeof p === 'object' && p.ref !== undefined) {
                 return created[p.ref];
+            }
+            if (p !== null && typeof p === 'object' && p.jsfunc !== undefined) {
+                const argv = Array.isArray(p.vars) ? p.vars : [p.var || 't'];
+                return new Function(...argv, `return (${p.jsfunc});`);
+            }
+            if (Array.isArray(p)) {
+                return p.map(resolveSpecValue);
             }
             return p;
         };
 
-        const elements = spec.elements || [];
-        for (const el of elements) {
-            const attrs = el.attrs || {};
-            // Make the internal id available to JSXGraph and to ref resolution.
-            attrs.id = String(el.id);
-            const parents = Array.isArray(el.parents) ? el.parents.map(resolveParent) : [];
-            created[el.id] = board.create(el.type, parents, attrs);
-        }
+        const createElements = (container, elements) => {
+            for (const el of elements || []) {
+                const attrs = { ...(el.attrs || {}) };
+                // Make the internal id available to JSXGraph and to ref resolution.
+                attrs.id = String(el.id);
+                const parents = Array.isArray(el.parents) ? el.parents.map(resolveSpecValue) : [];
+                const createdElement = container.create(el.type, parents, attrs);
+                created[el.id] = createdElement;
+                if (el.type === 'view3d') {
+                    createElements(createdElement, el.elements || []);
+                }
+            }
+        };
+
+        createElements(board, spec.elements || []);
         result.textContent = 'Rendered board';
     } catch (e) {
         box.textContent = `[JSXGraph render error: ${e.message}]`;
