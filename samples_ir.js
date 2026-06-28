@@ -224,7 +224,7 @@ function lorenz!(du, u, p, t)
 end
 
 u0 = [1.0, 0.0, 0.0]
-tspan = (0.0, 20.0)
+tspan = (0.0, 60.0)
 prob = ODEProblem(lorenz!, u0, tspan)
 sol = solve(prob, Tsit5(), dt=0.02, saveat=0.02)
 
