@@ -599,21 +599,18 @@ function renderJsxgraph(data) {
     }
 }
 
-// Issue #9206 / #9218: render a growing-path animation (`framesCompact` =
+// Issue #9206: render a growing-path animation (`framesCompact` =
 // {full, counts[, titles]}) without materializing all N native Plotly frames
 // (O(frames²) points in memory → WKWebView OOM on iOS). Points are kept at FULL
 // resolution (thinning them did not help on-device and made attractors look
-// ragged). Instead the cost is controlled by REDRAW COUNT:
+// ragged). One trace is grown with `extendTraces` / rewound with `restyle`, so
+// peak memory is O(n). 3D (gl3d) is driven exactly like 2D (SVG): start empty and
+// auto-play the growing path, full resolution, same playback.
 //
-// 2D (SVG) traces: grow one trace with `extendTraces` / rewind with `restyle` —
-// cheap, leak-free, smooth. Auto-plays.
-//
-// 3D (gl3d / WebGL) traces: each gl3d redraw leaks ~tens of MB on iOS WKWebView
-// (the scene is rebuilt and not promptly freed), so ~40 auto-play redraws
-// ballooned past ~1.8 GB → OOM. Keep ONE context grown in place, default to a
-// single static full-resolution render (the resting view never redraws → same
-// cost as a plain static plot), and animate only on Play with a tiny redraw
-// budget. The slider scrubs the time evolution (each scrub is one redraw).
+// Historical note (Issue #9218 → #9237): a large Aizawa `@animate` OOM was once
+// blamed on gl3d redraws leaking WebGL buffers. #9237 found the real cause was the
+// Editor result-value JSON echo (typed_value_json, O(frames²)), now bounded; gl3d
+// redraws are not the OOM source, so 3D needs no redraw or speed penalty.
 async function renderCompactProgressive(el, fc, layout, dur) {
     const full = fc.full || [];
     const counts = fc.counts || [];
@@ -623,6 +620,17 @@ async function renderCompactProgressive(el, fc, layout, dur) {
     if (!nFrames || !nTraces) return;
     const has3d = full.some((tr) => Array.isArray(tr.z));
     const host = (typeof el === 'string') ? document.getElementById(el) : el;
+    // Reserve a row for the control bar INSIDE the plot box (match iOS #9218): a
+    // flex-column wrapper holds the Plotly canvas (which flexes) plus the bar, so
+    // the canvas shrinks to fit and the bar sits at the bottom inside the box
+    // instead of overflowing below it. Scoped to this wrapper so #plot-output's own
+    // styles stay untouched and static plots are unaffected (Issue #9242).
+    const wrapper = document.createElement('div');
+    wrapper.style.cssText = 'display:flex;flex-direction:column;width:100%;height:100%;';
+    const plotDiv = document.createElement('div');
+    plotDiv.style.cssText = 'width:100%;flex:1 1 auto;min-height:0;';
+    wrapper.appendChild(plotDiv);
+    if (host) host.appendChild(wrapper);
     const idx = full.map((_, t) => t);
     const sliceTo = (tr, n) => {
         const d = Object.assign({}, tr);
@@ -656,7 +664,7 @@ async function renderCompactProgressive(el, fc, layout, dur) {
         }
         const rst = { x: rx, y: ry };
         if (rz.length) rst.z = rz;
-        Plotly.restyle(el, rst, idx);
+        Plotly.restyle(plotDiv, rst, idx);
     };
     const showFrame = (k) => {
         if (k === cur) return;
@@ -671,19 +679,18 @@ async function renderCompactProgressive(el, fc, layout, dur) {
                 }
                 const ext = { x: ax, y: ay };
                 if (has3d) ext.z = az;
-                Plotly.extendTraces(el, ext, idx);
+                Plotly.extendTraces(plotDiv, ext, idx);
             } catch (e) { useRestyle = true; restyleTo(k); }
         } else { restyleTo(k); }
         cur = k;
-        if (titles) Plotly.relayout(el, { 'title.text': titles[k] });
+        if (titles) Plotly.relayout(plotDiv, { 'title.text': titles[k] });
     };
 
-    await Plotly.newPlot(el, slicedData(cur), layoutFor(cur), { responsive: true });
-    Plotly.Plots.resize(el);
+    await Plotly.newPlot(plotDiv, slicedData(cur), layoutFor(cur), { responsive: true });
 
     // --- Play/Pause + time-evolution scrubber ---
     const bar = document.createElement('div');
-    bar.style.cssText = 'display:flex;align-items:center;gap:10px;margin-top:8px;color:#cdd6f4;font:13px sans-serif;';
+    bar.style.cssText = 'flex:0 0 auto;display:flex;align-items:center;gap:10px;padding:6px 2px 2px;color:#cdd6f4;font:13px sans-serif;';
     const playBtn = document.createElement('button');
     playBtn.textContent = '▶ Play';
     playBtn.style.cssText = 'background:#313244;color:#cdd6f4;border:1px solid #45475a;border-radius:6px;padding:4px 12px;cursor:pointer;';
@@ -699,12 +706,17 @@ async function renderCompactProgressive(el, fc, layout, dur) {
     bar.appendChild(playBtn);
     bar.appendChild(range);
     bar.appendChild(lbl);
-    if (host && host.parentNode) host.parentNode.insertBefore(bar, host.nextSibling);
+    // Bar goes inside the flex wrapper, after the canvas, so it sits at the bottom
+    // inside the plot box and the canvas reserves space for it (Issue #9242).
+    wrapper.appendChild(bar);
+    // The bar just claimed vertical space in the flex column, so the canvas box
+    // shrank — resize Plotly so it refits.
+    Plotly.Plots.resize(plotDiv);
     const label = () => { range.value = String(cur); lbl.textContent = (cur + 1) + '/' + nFrames; };
-    // Same step count for 2D and 3D so the playback duration and smoothness match
-    // (Issue #9218).
-    const MAX_REDRAWS = 40;
-    const stepN = Math.max(1, Math.ceil((nFrames - 1) / MAX_REDRAWS));
+    // Draw every frame (stepN = 1) for both 2D and 3D: with the gl3d-leak theory
+    // disproved (#9237) the redraw-count cap is unnecessary, so the growing path
+    // advances one frame per tick at full temporal granularity (Issue #9241).
+    const stepN = 1;
     let timer = null;
     const stop = () => { if (timer) { clearInterval(timer); timer = null; } playBtn.textContent = '▶ Play'; };
     const play = () => {
