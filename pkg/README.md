@@ -63,13 +63,19 @@ timeout 1800 cargo nextest run --release -p subset_julia_vm_web
 ### `run_from_source(source, seed)`
 
 Julia source をフルパイプラインで実行します。Playground はこの API を使います。
+`typed_value` には戻り値の型タグ付き JSON object が入ります。
 
 ```javascript
-import init, { run_from_source } from './pkg/subset_julia_vm_web.js';
+import init, { run_from_source, run_from_source_typed } from './pkg/subset_julia_vm_web.js';
 
 await init();
 const result = run_from_source('using Plots\nplot(sin)\n', BigInt(42));
+const typed = run_from_source_typed('[1.0, 2.5, 3.0]', BigInt(42));
+console.log(typed.typed_value.type); // "array"
 ```
+
+`run_from_source_typed` は `typed_value` を明示的に使う呼び出し側向けの
+alias です。戻り値の shape は `run_from_source` と同じです。
 
 ### `run_ir_json(irJson, seed)`
 
@@ -100,6 +106,7 @@ unicode_expand('f(\\alpha, \\beta)');
 interface ExecutionResult {
   success: boolean;
   value: number;
+  typed_value: unknown;
   output: string;
   error_message: string | null;
   artifact_mime: string | null;
@@ -115,6 +122,13 @@ artifact_data = { traces, layout } を持つ JSON string
 ```
 
 この artifact を Plotly.js で描画する責任は host page 側にあります。
+
+`typed_value` の代表例:
+
+```json
+{"type":"array","element_type":"Float64","shape":[3],"elements":[...]}
+{"type":"complex","real":1.5,"imag":2.25}
+```
 
 ## 実装メモ
 

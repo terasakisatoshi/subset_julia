@@ -454,6 +454,20 @@ async function displayResult(execResult) {
                 if (typeof Plotly !== 'undefined') {
                     const traces = parsed.traces || [];
                     const layout = themedPlotlyLayout(parsed.layout || {});
+                    // Issue #9206: a growing-path animation (`framesCompact`) is
+                    // rendered progressively by growing one trace, so peak memory is
+                    // O(n) instead of the O(frames²) that native Plotly frames hold.
+                    if (parsed.framesCompact) {
+                        const dur = (parsed.layout && parsed.layout._frameDuration) || 50;
+                        await renderCompactProgressive(plotOutput, parsed.framesCompact, layout, dur);
+                        result.textContent = 'Rendered animation';
+                        if (execResult.output) {
+                            output.textContent = execResult.output;
+                        } else {
+                            output.classList.add('hidden');
+                        }
+                        return;
+                    }
                     if (parsed.frames && parsed.frames.length) {
                         const dur = (parsed.layout && parsed.layout._frameDuration) || 50;
                         await Plotly.newPlot(plotOutput, {
@@ -585,6 +599,144 @@ function renderJsxgraph(data) {
     }
 }
 
+// Issue #9206 / #9218: render a growing-path animation (`framesCompact` =
+// {full, counts[, titles]}) without materializing all N native Plotly frames
+// (O(frames²) points in memory → WKWebView OOM on iOS). Points are kept at FULL
+// resolution (thinning them did not help on-device and made attractors look
+// ragged). Instead the cost is controlled by REDRAW COUNT:
+//
+// 2D (SVG) traces: grow one trace with `extendTraces` / rewind with `restyle` —
+// cheap, leak-free, smooth. Auto-plays.
+//
+// 3D (gl3d / WebGL) traces: each gl3d redraw leaks ~tens of MB on iOS WKWebView
+// (the scene is rebuilt and not promptly freed), so ~40 auto-play redraws
+// ballooned past ~1.8 GB → OOM. Keep ONE context grown in place, default to a
+// single static full-resolution render (the resting view never redraws → same
+// cost as a plain static plot), and animate only on Play with a tiny redraw
+// budget. The slider scrubs the time evolution (each scrub is one redraw).
+async function renderCompactProgressive(el, fc, layout, dur) {
+    const full = fc.full || [];
+    const counts = fc.counts || [];
+    const titles = fc.titles || null;
+    const nTraces = full.length;
+    const nFrames = counts.length;
+    if (!nFrames || !nTraces) return;
+    const has3d = full.some((tr) => Array.isArray(tr.z));
+    const host = (typeof el === 'string') ? document.getElementById(el) : el;
+    const idx = full.map((_, t) => t);
+    const sliceTo = (tr, n) => {
+        const d = Object.assign({}, tr);
+        if (Array.isArray(tr.x)) d.x = tr.x.slice(0, n);
+        if (Array.isArray(tr.y)) d.y = tr.y.slice(0, n);
+        if (Array.isArray(tr.z)) d.z = tr.z.slice(0, n);
+        return d;
+    };
+    const slicedData = (k) => full.map((tr, t) => sliceTo(tr, counts[k][t]));
+    const baseLay = Object.assign({}, layout);
+    delete baseLay.updatemenus;
+    delete baseLay.sliders;
+    delete baseLay._frameDuration;
+    const layoutFor = (k) => {
+        const l = Object.assign({}, baseLay);
+        if (titles) l.title = { text: titles[k], font: { color: '#cdd6f4' } };
+        return l;
+    };
+
+    // One growing context: extend forward, restyle back. 3D is treated exactly
+    // like 2D — start empty and auto-play the growing path so the animation speed,
+    // smoothness, and slider behaviour match (Issue #9218).
+    let cur = 0;
+    let useRestyle = false;
+    const restyleTo = (k) => {
+        const rx = [], ry = [], rz = [];
+        for (let t = 0; t < nTraces; t++) {
+            rx.push(full[t].x.slice(0, counts[k][t]));
+            ry.push(full[t].y.slice(0, counts[k][t]));
+            if (Array.isArray(full[t].z)) rz.push(full[t].z.slice(0, counts[k][t]));
+        }
+        const rst = { x: rx, y: ry };
+        if (rz.length) rst.z = rz;
+        Plotly.restyle(el, rst, idx);
+    };
+    const showFrame = (k) => {
+        if (k === cur) return;
+        if (k > cur && !useRestyle) {
+            try {
+                const ax = [], ay = [], az = [];
+                for (let t = 0; t < nTraces; t++) {
+                    const a = counts[cur][t], b = counts[k][t];
+                    ax.push(full[t].x.slice(a, b));
+                    ay.push(full[t].y.slice(a, b));
+                    if (has3d) az.push(Array.isArray(full[t].z) ? full[t].z.slice(a, b) : []);
+                }
+                const ext = { x: ax, y: ay };
+                if (has3d) ext.z = az;
+                Plotly.extendTraces(el, ext, idx);
+            } catch (e) { useRestyle = true; restyleTo(k); }
+        } else { restyleTo(k); }
+        cur = k;
+        if (titles) Plotly.relayout(el, { 'title.text': titles[k] });
+    };
+
+    await Plotly.newPlot(el, slicedData(cur), layoutFor(cur), { responsive: true });
+    Plotly.Plots.resize(el);
+
+    // --- Play/Pause + time-evolution scrubber ---
+    const bar = document.createElement('div');
+    bar.style.cssText = 'display:flex;align-items:center;gap:10px;margin-top:8px;color:#cdd6f4;font:13px sans-serif;';
+    const playBtn = document.createElement('button');
+    playBtn.textContent = '▶ Play';
+    playBtn.style.cssText = 'background:#313244;color:#cdd6f4;border:1px solid #45475a;border-radius:6px;padding:4px 12px;cursor:pointer;';
+    const range = document.createElement('input');
+    range.type = 'range';
+    range.min = '0';
+    range.max = String(nFrames - 1);
+    range.value = String(cur);
+    range.style.flex = '1';
+    const lbl = document.createElement('span');
+    lbl.textContent = (cur + 1) + '/' + nFrames;
+    lbl.style.cssText = 'min-width:64px;text-align:right';
+    bar.appendChild(playBtn);
+    bar.appendChild(range);
+    bar.appendChild(lbl);
+    if (host && host.parentNode) host.parentNode.insertBefore(bar, host.nextSibling);
+    const label = () => { range.value = String(cur); lbl.textContent = (cur + 1) + '/' + nFrames; };
+    // Same step count for 2D and 3D so the playback duration and smoothness match
+    // (Issue #9218).
+    const MAX_REDRAWS = 40;
+    const stepN = Math.max(1, Math.ceil((nFrames - 1) / MAX_REDRAWS));
+    let timer = null;
+    const stop = () => { if (timer) { clearInterval(timer); timer = null; } playBtn.textContent = '▶ Play'; };
+    const play = () => {
+        if (timer) { stop(); return; }
+        if (cur >= nFrames - 1) { showFrame(0); label(); }
+        playBtn.textContent = '❚❚ Pause';
+        timer = setInterval(() => {
+            if (cur >= nFrames - 1) { stop(); return; }
+            showFrame(Math.min(cur + stepN, nFrames - 1));
+            label();
+        }, dur);
+    };
+    playBtn.addEventListener('click', play);
+    // Live "guri-guri" scrubbing for both 2D and 3D: update as the slider is
+    // dragged. 3D (gl3d) redraws are heavier, so coalesce rapid drag events with
+    // requestAnimationFrame to at most one redraw per frame (Issue #9218).
+    let rafPending = false, pendingK = 0;
+    range.addEventListener('input', () => {
+        stop();
+        pendingK = Number(range.value);
+        if (has3d) {
+            if (!rafPending) {
+                rafPending = true;
+                requestAnimationFrame(() => { rafPending = false; showFrame(pendingK); label(); });
+            }
+        } else {
+            showFrame(pendingK); label();
+        }
+    });
+    play(); // auto-play the growing path once, for both 2D and 3D
+}
+
 function themedPlotlyLayout(layout) {
     const themed = {
         ...layout,
@@ -621,6 +773,27 @@ function themedAxis(axis = {}) {
 // WASM warmup
 // ============================================================
 
+// Base warmup: the FIRST run_from_source() call deserializes the embedded
+// Base bytecode cache and restores it into the thread-local registries — a
+// one-time cost paid on the critical path before the first user execution.
+// A trivial `1 + 1` triggers exactly that restore without pulling in the
+// (much heavier) Plots package. Run is enabled as soon as THIS completes, so
+// users who only `println` no longer wait for the Plots warmup below.
+function baseWarmup() {
+    if (!wasm) {
+        return;
+    }
+    try {
+        wasm.run_from_source('1 + 1\n', BigInt(0));
+    } catch (e) {
+        console.warn('WASM base warmup failed:', e);
+    }
+}
+
+// Plot warmup: warms the Plots package compile path so the first user plot is
+// fast (Issue #6127). This is heavier than the base warmup, so it runs OFF
+// the critical path (via scheduleWarmup, on an idle callback) instead of
+// gating Run.
 function warmupWasm() {
     if (!wasm) {
         return Promise.resolve();
@@ -725,12 +898,21 @@ async function init() {
     }
 
     if (wasm) {
+        // Only the light Base cache restore is on the critical path. The
+        // heavier Plots warmup is scheduled below on an idle callback so it
+        // does not delay enabling Run for non-plot usage (e.g. println).
         runBtn.textContent = 'Warming...';
-        await warmupWasm();
+        baseWarmup();
     }
 
     runBtn.disabled = false;
     runBtn.textContent = runButtonText;
+
+    if (wasm) {
+        // Warm the Plots compile path in the background (Issue #6127) without
+        // blocking the first user execution.
+        scheduleWarmup();
+    }
 }
 
 init();

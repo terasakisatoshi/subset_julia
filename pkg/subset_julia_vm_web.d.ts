@@ -2,6 +2,47 @@
 /* eslint-disable */
 
 /**
+ * Register VM vs stack VM measurement entry for wasm32 (Issue #8559).
+ *
+ * Wraps one precompiled program so repeated `run` calls time VM execution
+ * only (parsing/lowering/compilation happen once, in the constructor). The
+ * JavaScript driver (`scripts/register_vm_wasm_bench_8559.mjs`) measures
+ * wall time around `run` and reads the deterministic engine counters from
+ * the returned object. wasm32-unknown-unknown has no process environment,
+ * so the engine gates are toggled through the
+ * `set_register_vm_forced`/`set_stack_vm_metrics_forced` process overrides
+ * instead of `SJULIA_REGISTER_VM`/`SJULIA_STACK_VM_METRICS`.
+ */
+export class RegisterVmBench {
+    free(): void;
+    [Symbol.dispose](): void;
+    /**
+     * Parse, lower, and compile `source` once through the shared pipeline
+     * (same path as `run_from_source`).
+     */
+    constructor(source: string);
+    /**
+     * Execute the precompiled program once on a fresh `Vm`.
+     *
+     * `register_gate` routes eligible direct calls through the register VM
+     * prototype; `collect_counters` arms the stack VM metrics (leave it
+     * `false` for wall-time runs so counter bookkeeping does not perturb
+     * the timing).
+     */
+    run(register_gate: boolean, collect_counters: boolean, seed: bigint): any;
+}
+
+/**
+ * Return the C ABI version baked into this WASM build (Issue #9001).
+ *
+ * For WASM consumers the JS glue and the WASM module are bundled together at
+ * build time, so there is no runtime binary mismatch risk.  This function
+ * exposes the version as an informational export so host applications can
+ * log or assert it matches the version they were written against.
+ */
+export function abi_version(): number;
+
+/**
  * List of supported Julia subset features
  */
 export function get_supported_features(): any;
@@ -33,6 +74,12 @@ export function init(): void;
  * An ExecutionResult object containing success status, value, output, and error message
  */
 export function run_from_source(source: string, seed: bigint): any;
+
+/**
+ * Run Julia source code and return an ExecutionResult with `typed_value`
+ * populated as a structured JavaScript object.
+ */
+export function run_from_source_typed(source: string, seed: bigint): any;
 
 /**
  * Run a Core IR JSON program and return the result.
@@ -82,21 +129,27 @@ export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembl
 
 export interface InitOutput {
     readonly memory: WebAssembly.Memory;
+    readonly __wbg_registervmbench_free: (a: number, b: number) => void;
+    readonly abi_version: () => number;
     readonly get_supported_features: () => any;
     readonly get_unsupported_features: () => any;
     readonly get_version: () => [number, number];
     readonly init: () => void;
+    readonly registervmbench_new: (a: number, b: number) => [number, number, number];
+    readonly registervmbench_run: (a: number, b: number, c: number, d: bigint) => [number, number, number];
     readonly run_from_source: (a: number, b: number, c: bigint) => any;
+    readonly run_from_source_typed: (a: number, b: number, c: bigint) => any;
     readonly run_ir_json: (a: number, b: number, c: bigint) => any;
     readonly run_ir_simple: (a: number, b: number, c: bigint) => number;
     readonly unicode_completions: (a: number, b: number) => any;
     readonly unicode_expand: (a: number, b: number) => [number, number];
     readonly unicode_lookup: (a: number, b: number) => [number, number];
     readonly unicode_reverse_lookup: (a: number, b: number) => [number, number];
-    readonly __wbindgen_free: (a: number, b: number, c: number) => void;
     readonly __wbindgen_malloc: (a: number, b: number) => number;
     readonly __wbindgen_realloc: (a: number, b: number, c: number, d: number) => number;
+    readonly __wbindgen_free: (a: number, b: number, c: number) => void;
     readonly __wbindgen_externrefs: WebAssembly.Table;
+    readonly __externref_table_dealloc: (a: number) => void;
     readonly __wbindgen_start: () => void;
 }
 

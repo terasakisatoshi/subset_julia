@@ -1,6 +1,81 @@
 /* @ts-self-types="./subset_julia_vm_web.d.ts" */
 
 /**
+ * Register VM vs stack VM measurement entry for wasm32 (Issue #8559).
+ *
+ * Wraps one precompiled program so repeated `run` calls time VM execution
+ * only (parsing/lowering/compilation happen once, in the constructor). The
+ * JavaScript driver (`scripts/register_vm_wasm_bench_8559.mjs`) measures
+ * wall time around `run` and reads the deterministic engine counters from
+ * the returned object. wasm32-unknown-unknown has no process environment,
+ * so the engine gates are toggled through the
+ * `set_register_vm_forced`/`set_stack_vm_metrics_forced` process overrides
+ * instead of `SJULIA_REGISTER_VM`/`SJULIA_STACK_VM_METRICS`.
+ */
+export class RegisterVmBench {
+    __destroy_into_raw() {
+        const ptr = this.__wbg_ptr;
+        this.__wbg_ptr = 0;
+        RegisterVmBenchFinalization.unregister(this);
+        return ptr;
+    }
+    free() {
+        const ptr = this.__destroy_into_raw();
+        wasm.__wbg_registervmbench_free(ptr, 0);
+    }
+    /**
+     * Parse, lower, and compile `source` once through the shared pipeline
+     * (same path as `run_from_source`).
+     * @param {string} source
+     */
+    constructor(source) {
+        const ptr0 = passStringToWasm0(source, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.registervmbench_new(ptr0, len0);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        this.__wbg_ptr = ret[0];
+        RegisterVmBenchFinalization.register(this, this.__wbg_ptr, this);
+        return this;
+    }
+    /**
+     * Execute the precompiled program once on a fresh `Vm`.
+     *
+     * `register_gate` routes eligible direct calls through the register VM
+     * prototype; `collect_counters` arms the stack VM metrics (leave it
+     * `false` for wall-time runs so counter bookkeeping does not perturb
+     * the timing).
+     * @param {boolean} register_gate
+     * @param {boolean} collect_counters
+     * @param {bigint} seed
+     * @returns {any}
+     */
+    run(register_gate, collect_counters, seed) {
+        const ret = wasm.registervmbench_run(this.__wbg_ptr, register_gate, collect_counters, seed);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return takeFromExternrefTable0(ret[0]);
+    }
+}
+if (Symbol.dispose) RegisterVmBench.prototype[Symbol.dispose] = RegisterVmBench.prototype.free;
+
+/**
+ * Return the C ABI version baked into this WASM build (Issue #9001).
+ *
+ * For WASM consumers the JS glue and the WASM module are bundled together at
+ * build time, so there is no runtime binary mismatch risk.  This function
+ * exposes the version as an informational export so host applications can
+ * log or assert it matches the version they were written against.
+ * @returns {number}
+ */
+export function abi_version() {
+    const ret = wasm.abi_version();
+    return ret >>> 0;
+}
+
+/**
  * List of supported Julia subset features
  * @returns {any}
  */
@@ -60,6 +135,20 @@ export function run_from_source(source, seed) {
     const ptr0 = passStringToWasm0(source, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
     const len0 = WASM_VECTOR_LEN;
     const ret = wasm.run_from_source(ptr0, len0, seed);
+    return ret;
+}
+
+/**
+ * Run Julia source code and return an ExecutionResult with `typed_value`
+ * populated as a structured JavaScript object.
+ * @param {string} source
+ * @param {bigint} seed
+ * @returns {any}
+ */
+export function run_from_source_typed(source, seed) {
+    const ptr0 = passStringToWasm0(source, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+    const len0 = WASM_VECTOR_LEN;
+    const ret = wasm.run_from_source_typed(ptr0, len0, seed);
     return ret;
 }
 
@@ -171,6 +260,21 @@ export function unicode_reverse_lookup(unicode_char) {
 function __wbg_get_imports() {
     const import0 = {
         __proto__: null,
+        __wbg_Error_ef53bc310eb298a0: function(arg0, arg1) {
+            const ret = Error(getStringFromWasm0(arg0, arg1));
+            return ret;
+        },
+        __wbg_String_8564e559799eccda: function(arg0, arg1) {
+            const ret = String(arg1);
+            const ptr1 = passStringToWasm0(ret, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+            const len1 = WASM_VECTOR_LEN;
+            getDataViewMemory0().setInt32(arg0 + 4 * 1, len1, true);
+            getDataViewMemory0().setInt32(arg0 + 4 * 0, ptr1, true);
+        },
+        __wbg___wbindgen_is_string_c236cabd84a4d769: function(arg0) {
+            const ret = typeof(arg0) === 'string';
+            return ret;
+        },
         __wbg___wbindgen_throw_1506f2235d1bdba0: function(arg0, arg1) {
             throw new Error(getStringFromWasm0(arg0, arg1));
         },
@@ -189,6 +293,10 @@ function __wbg_get_imports() {
             const ret = new Error();
             return ret;
         },
+        __wbg_new_622fc80556be2e26: function() {
+            const ret = new Map();
+            return ret;
+        },
         __wbg_new_ce1ab61c1c2b300d: function() {
             const ret = new Object();
             return ret;
@@ -199,6 +307,10 @@ function __wbg_get_imports() {
         },
         __wbg_now_190933fa139cc119: function() {
             const ret = Date.now();
+            return ret;
+        },
+        __wbg_set_52b1e1eb5bed906a: function(arg0, arg1, arg2) {
+            const ret = arg0.set(arg1, arg2);
             return ret;
         },
         __wbg_set_6be42768c690e380: function(arg0, arg1, arg2) {
@@ -219,9 +331,19 @@ function __wbg_get_imports() {
             const ret = arg0;
             return ret;
         },
-        __wbindgen_cast_0000000000000002: function(arg0, arg1) {
+        __wbindgen_cast_0000000000000002: function(arg0) {
+            // Cast intrinsic for `I64 -> Externref`.
+            const ret = arg0;
+            return ret;
+        },
+        __wbindgen_cast_0000000000000003: function(arg0, arg1) {
             // Cast intrinsic for `Ref(String) -> Externref`.
             const ret = getStringFromWasm0(arg0, arg1);
+            return ret;
+        },
+        __wbindgen_cast_0000000000000004: function(arg0) {
+            // Cast intrinsic for `U64 -> Externref`.
+            const ret = BigInt.asUintN(64, arg0);
             return ret;
         },
         __wbindgen_init_externref_table: function() {
@@ -239,6 +361,10 @@ function __wbg_get_imports() {
         "./subset_julia_vm_web_bg.js": import0,
     };
 }
+
+const RegisterVmBenchFinalization = (typeof FinalizationRegistry === 'undefined')
+    ? { register: () => {}, unregister: () => {} }
+    : new FinalizationRegistry(ptr => wasm.__wbg_registervmbench_free(ptr, 1));
 
 let cachedDataViewMemory0 = null;
 function getDataViewMemory0() {
@@ -295,6 +421,12 @@ function passStringToWasm0(arg, malloc, realloc) {
 
     WASM_VECTOR_LEN = offset;
     return ptr;
+}
+
+function takeFromExternrefTable0(idx) {
+    const value = wasm.__wbindgen_externrefs.get(idx);
+    wasm.__externref_table_dealloc(idx);
+    return value;
 }
 
 let cachedTextDecoder = new TextDecoder('utf-8', { ignoreBOM: true, fatal: true });
