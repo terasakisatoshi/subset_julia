@@ -118,8 +118,9 @@ export function init() {
  * Run Julia source code directly using the pure Rust parser.
  *
  * This is the recommended entry point for running Julia code in WASM.
- * It uses subset_julia_vm_parser which is a pure Rust parser that works
- * natively in WASM without requiring web-tree-sitter.
+ * It uses the pure Rust lezer-compatible parser front end (canonical CST,
+ * subset_julia_vm_parser_common) that works natively in WASM without
+ * requiring web-tree-sitter.
  *
  * # Arguments
  * * `source` - Julia source code to execute
