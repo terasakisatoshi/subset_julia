@@ -26,10 +26,14 @@ Rust や WASM API を変更したら `pkg/` を再生成します。
 リポジトリルートから:
 
 ```bash
-scripts/wasm_build_with_cache.sh
+scripts/wasm_build_with_cache.sh --out-dir ./web/pkg
 cd web
 python3 server.py
 ```
+
+`--out-dir` を省略すると wasm-pack のデフォルト (`subset_julia_vm_web/pkg/`) に
+出力され、`web/pkg` は更新されません。相対パスはスクリプト呼び出し時の
+カレントディレクトリ基準で解決されます。
 
 起動後:
 
@@ -56,19 +60,20 @@ wasm.run_from_source(code, BigInt(42));
 
 結果は text output、numeric result、error、Plotly graph、または JSXGraph board として表示します。`using Plots; plot(sin)` は `artifact_mime = "application/vnd.plotly+json"` を返し `plotly.min.js` で描画されます。`using JSXGraph; html(board)` は `artifact_mime = "application/vnd.jsxgraph+json"` を返し、`app.js::renderJsxgraph` が `jsxgraph.min.js` でインタラクティブな board を描画します(Issue #7286)。
 
-startup 中、`app.js` は warmup として次を一度実行します。warmup が終わるまで Run button は無効です。
+startup 中、`app.js` は 2 段階の warmup を実行します。どちらも画面の出力は更新しません。
 
-```julia
-using Plots
-plot(sin)
-```
-
-これは初回の user plot 実行と同じ WASM compile path を温めるためです。画面の出力は更新しません。Run button を有効化する前に warmup を完了させることで、最初の user execution が cold path を踏むのを避けます (Issue #6127)。
+1. **Base warmup** — `1 + 1` を一度実行し、embedded Base bytecode cache の
+   deserialize/restore(初回 `run_from_source` の一回限りのコスト)を先に払います。
+   Run button はこれが完了した時点で有効になるため、`println` だけの user は
+   Plots warmup を待ちません。
+2. **Plot warmup** — `using Plots; plot(sin)` を idle callback 経由で
+   critical path の外で実行し、Plots package の compile path を温めます
+   (Issue #6127)。Run はこれをブロックしません。
 
 ## モバイル UI
 
 - 狭い画面では **Edit / Output** のタブ切り替えになります。
-- エディタはスマートフォン入力に安定した `<textarea>` を使用します。
+- エディタは Monaco Editor（CDN の loader 経由で読み込み、`julia-language.js` で Julia syntax を登録）です。
 - サンプル選択は画面上部の dropdown（`<select>`、カテゴリ別 optgroup）です。
 - デスクトップではエディタと出力が左右に並びます（768px 以上）。
 
@@ -91,12 +96,12 @@ sample は iOS アプリ (`SubsetJuliaVMApp/SubsetJuliaVMApp/Resources/Samples/`
 }
 ```
 
-Playground は `code` field を使います。`ir` field は historical な名前の残りです。iOS 専用パッケージに依存する sample（JSXGraph、Distributions、Symbolics、Primes）は `webUnsupported: true` として listing されますが、web 上では実行せず代替メッセージを表示します。
+Playground は `code` field を使います。`ir` field は historical な名前の残りです。bundled package に依存する sample(Primes、Symbolics、Distributions、JSXGraph、Plots/Interact)も含め、現在は全 sample が web build で end-to-end に実行できるため、すべて `webUnsupported: false` です(Issue #7286 / #7310)。web build で本当に実行できない sample を追加する場合のみ `true` にします。
 
-`samples_ir.js` を変更したら、`app.js` の import query を上げます。
+`samples_ir.js` を変更したら、`app.js` の import query を上げます(現在 `?v=2`)。
 
 ```javascript
-import { samplesIR } from './samples_ir.js?v=28';
+import { samplesIR } from './samples_ir.js?v=2';
 ```
 
 ## Plotly / JSXGraph

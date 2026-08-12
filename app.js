@@ -444,75 +444,27 @@ async function displayResult(execResult) {
     output.classList.remove('hidden');
 
     if (execResult.success) {
-        const mime = execResult.artifact_mime;
-        const data = execResult.artifact_data;
-        if (mime === 'application/vnd.plotly+json' && data) {
+        const artifacts = Array.isArray(execResult.artifacts) && execResult.artifacts.length
+            ? execResult.artifacts
+            : (execResult.artifact_mime && execResult.artifact_data
+                ? [{ mime: execResult.artifact_mime, data: execResult.artifact_data }]
+                : []);
+        if (artifacts.length) {
             plotOutput.classList.remove('hidden');
-            plotOutput.style.height = '450px';
-            try {
-                const parsed = JSON.parse(data);
-                if (typeof Plotly !== 'undefined') {
-                    const traces = parsed.traces || [];
-                    const layout = themedPlotlyLayout(parsed.layout || {});
-                    // Issue #9206: a growing-path animation (`framesCompact`) is
-                    // rendered progressively by growing one trace, so peak memory is
-                    // O(n) instead of the O(frames²) that native Plotly frames hold.
-                    if (parsed.framesCompact) {
-                        const dur = (parsed.layout && parsed.layout._frameDuration) || 50;
-                        await renderCompactProgressive(plotOutput, parsed.framesCompact, layout, dur);
-                        result.textContent = 'Rendered animation';
-                        if (execResult.output) {
-                            output.textContent = execResult.output;
-                        } else {
-                            output.classList.add('hidden');
-                        }
-                        return;
-                    }
-                    if (parsed.frames && parsed.frames.length) {
-                        const dur = (parsed.layout && parsed.layout._frameDuration) || 50;
-                        await Plotly.newPlot(plotOutput, {
-                            data: traces,
-                            layout: layout,
-                            frames: parsed.frames,
-                            config: { responsive: true }
-                        });
-                        Plotly.Plots.resize(plotOutput);
-                        Plotly.animate(plotOutput, null, {
-                            frame: { duration: dur, redraw: true },
-                            transition: { duration: 0 },
-                            fromcurrent: true,
-                            mode: 'immediate'
-                        });
-                        result.textContent = 'Rendered animation';
-                        if (execResult.output) {
-                            output.textContent = execResult.output;
-                        } else {
-                            output.classList.add('hidden');
-                        }
-                        return;
-                    }
-                    await Plotly.newPlot(plotOutput, traces, layout, { responsive: true });
-                    Plotly.Plots.resize(plotOutput);
-                    if (plotOutput.children.length === 0) {
-                        plotOutput.textContent = '[Plotly rendered no visible output]';
-                    } else {
-                        result.textContent = 'Rendered plot';
-                    }
-                } else {
-                    plotOutput.textContent = '[Plotly.js not loaded - cannot render plot]';
+            plotOutput.style.height = 'auto';
+            let rendered = 0;
+            for (const artifact of artifacts) {
+                const box = document.createElement('div');
+                box.className = 'artifact-output';
+                box.style.width = '100%';
+                box.style.height = '450px';
+                box.style.marginBottom = '12px';
+                plotOutput.appendChild(box);
+                if (await renderArtifactBox(box, artifact.mime, artifact.data)) {
+                    rendered += 1;
                 }
-            } catch (e) {
-                plotOutput.textContent = `[Plotly render error: ${e.message}]`;
             }
-            if (execResult.output) {
-                output.textContent = execResult.output;
-            } else {
-                output.classList.add('hidden');
-            }
-        } else if (mime === 'application/vnd.jsxgraph+json' && data) {
-            plotOutput.classList.remove('hidden');
-            plotOutput.style.height = '450px';
-            renderJsxgraph(data);
+            result.textContent = rendered === 1 ? 'Rendered artifact' : `Rendered ${rendered} artifacts`;
             if (execResult.output) {
                 output.textContent = execResult.output;
             } else {
@@ -541,17 +493,75 @@ async function displayResult(execResult) {
     }
 }
 
+async function renderArtifactBox(target, mime, data) {
+    if (mime === 'application/vnd.plotly+json' && data) {
+        return renderPlotlyArtifact(target, data);
+    }
+    if (mime === 'application/vnd.jsxgraph+json' && data) {
+        renderJsxgraph(data, target);
+        return true;
+    }
+    target.textContent = '[Unsupported display artifact]';
+    return false;
+}
+
+async function renderPlotlyArtifact(target, data) {
+    try {
+        const parsed = JSON.parse(data);
+        if (typeof Plotly === 'undefined') {
+            target.textContent = '[Plotly.js not loaded - cannot render plot]';
+            return false;
+        }
+        const traces = parsed.traces || [];
+        const layout = themedPlotlyLayout(parsed.layout || {});
+        // Issue #9206: a growing-path animation (`framesCompact`) is rendered
+        // progressively by growing one trace, so peak memory is O(n).
+        if (parsed.framesCompact) {
+            const dur = (parsed.layout && parsed.layout._frameDuration) || 50;
+            await renderCompactProgressive(target, parsed.framesCompact, layout, dur);
+            return true;
+        }
+        if (parsed.frames && parsed.frames.length) {
+            const dur = (parsed.layout && parsed.layout._frameDuration) || 50;
+            await Plotly.newPlot(target, {
+                data: traces,
+                layout: layout,
+                frames: parsed.frames,
+                config: { responsive: true }
+            });
+            Plotly.Plots.resize(target);
+            Plotly.animate(target, null, {
+                frame: { duration: dur, redraw: true },
+                transition: { duration: 0 },
+                fromcurrent: true,
+                mode: 'immediate'
+            });
+            return true;
+        }
+        await Plotly.newPlot(target, traces, layout, { responsive: true });
+        Plotly.Plots.resize(target);
+        if (target.children.length === 0) {
+            target.textContent = '[Plotly rendered no visible output]';
+            return false;
+        }
+        return true;
+    } catch (e) {
+        target.textContent = `[Plotly render error: ${e.message}]`;
+        return false;
+    }
+}
+
 // Render a JSXGraph board spec (`{"options": {...}, "elements": [...]}`) into the
 // plot pane. Mirrors the iOS JSXGraphView renderer (Issue #6357 / #7286): each
 // element is created via board.create(type, parents, attrs); parents reference
 // earlier elements as {ref: id}. Requires the global JXG from jsxgraph.min.js.
-function renderJsxgraph(data) {
+function renderJsxgraph(data, host = plotOutput) {
     const box = document.createElement('div');
-    box.id = 'jxgbox';
+    box.id = `jxgbox-${Date.now()}-${Math.floor(Math.random() * 1000000)}`;
     box.style.width = '100%';
     box.style.height = '100%';
     box.style.aspectRatio = '1 / 1';
-    plotOutput.appendChild(box);
+    host.appendChild(box);
 
     if (typeof JXG === 'undefined' || !JXG.JSXGraph) {
         box.textContent = '[JSXGraph.js not loaded — cannot render board]';
@@ -561,7 +571,7 @@ function renderJsxgraph(data) {
     try {
         const spec = JSON.parse(data);
         const options = spec.options || { boundingbox: [-5, 5, 5, -5], axis: true };
-        const board = JXG.JSXGraph.initBoard('jxgbox', options);
+        const board = JXG.JSXGraph.initBoard(box.id, options);
         const created = {};
 
         const resolveSpecValue = (p) => {
@@ -593,7 +603,6 @@ function renderJsxgraph(data) {
         };
 
         createElements(board, spec.elements || []);
-        result.textContent = 'Rendered board';
     } catch (e) {
         box.textContent = `[JSXGraph render error: ${e.message}]`;
     }
